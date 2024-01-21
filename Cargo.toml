@@ -1,0 +1,19 @@
+[package]
+name = "genefuse"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.79", features = ["backtrace"] }
+clap = { version = "4.4.16", features = ["cargo"] }
+flate2 = { version ="1.0.28", features = ["zlib-ng"], default-features = false}
+log = "0.4.20"
+log4rs = "1.2.0"
+tikv-jemallocator = "0.5.4"
+
+[profile.release]
+codegen-units=1
+lto=false
+debug = true
