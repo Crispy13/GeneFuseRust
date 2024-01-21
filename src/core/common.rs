@@ -1,6 +1,6 @@
 use super::gene::Gene;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, PartialOrd)]
 pub(crate) struct GenePos {
     pub(crate) contig: i16,
     pub(crate) position: i32,

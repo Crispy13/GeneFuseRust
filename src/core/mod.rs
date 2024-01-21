@@ -9,3 +9,6 @@ pub(crate) mod sequence;
 pub(crate) mod fusion_mapper;
 pub(crate) mod indexer;
 pub(crate) mod common;
+pub(crate) mod fusion_result;
+pub(crate) mod read_match;
+

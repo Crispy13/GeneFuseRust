@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, PartialOrd)]
 pub(crate) struct Sequence {
     pub(crate) m_str: String,
 }
@@ -12,6 +12,10 @@ impl Sequence {
 
     pub(crate) fn reverse_complement(&self) -> Self {
         Self { m_str: reverse_complement(&self.m_str) }
+    }
+
+    pub(crate) fn len(&self) {
+        self.m_str.len();
     }
 }
 

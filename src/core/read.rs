@@ -1,6 +1,6 @@
 use super::sequence::Sequence;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, PartialOrd)]
 pub(crate) struct SequenceRead {
     pub(crate) m_name: String,
     pub(crate) m_seq: Sequence,
@@ -24,6 +24,10 @@ impl SequenceRead {
             m_quality,
             m_has_quality,
         }
+    }
+
+    pub(crate) fn len(&self) {
+        self.m_seq.len()
     }
 }
 
