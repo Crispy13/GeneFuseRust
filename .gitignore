@@ -1,2 +1,8 @@
 /target
 hg38.fa.gz
+hg38.fa
+*perf*
+*.sh
+*.log
+genes
+*.svg
