@@ -2,7 +2,7 @@
 
 use std::{
     array,
-    collections::{hash_map, HashMap},
+    collections::{hash_map, BTreeMap, HashMap},
     error::Error,
     fmt,
     hash::Hash,
@@ -10,7 +10,10 @@ use std::{
 };
 
 use crate::{
-    aux::global_settings::{global_settings, GlobalSettings},
+    aux::{
+        global_settings::{global_settings, GlobalSettings},
+        pbar::prepare_pbar,
+    },
     core::common::{DUPE_HIGH_LEVEL, DUPE_NORMAL_LEVEL},
 };
 
@@ -31,13 +34,13 @@ const MATCH_UNKNOWN: u8 = 0;
 
 const KMER: i32 = 16;
 // 512M bloom filter
-const BLOOM_FILTER_SIZE: usize = 1 << 29;
+const BLOOM_FILTER_SIZE: usize = (1_i32.wrapping_shl(29)) as usize;
 const BLOOM_FILTER_BITS: usize = BLOOM_FILTER_SIZE - 1;
 
-struct SeqMatch {
-    seq_start: i32,
-    seq_end: i32,
-    start_gp: GenePos,
+pub(crate) struct SeqMatch {
+    pub(crate) seq_start: i32,
+    pub(crate) seq_end: i32,
+    pub(crate) start_gp: GenePos,
 }
 
 impl SeqMatch {
@@ -68,23 +71,26 @@ pub(crate) struct Indexer {
     m_dupe_pos: i32,
 
     pub(crate) m_kmer_pos: HashMap<i32, GenePos>,
-    pub(crate) m_bloom_filter: [u8; BLOOM_FILTER_SIZE], // `u8` in rust corresponds to unsigned char in C
+    pub(crate) m_bloom_filter: Box<[u8]>, // `u8` in rust corresponds to unsigned char in C
     pub(crate) m_dupe_list: Vec<Vec<GenePos>>,
     pub(crate) m_fusion_seq: Vec<String>,
 }
 
 impl Indexer {
-    pub(crate) fn new(ref_file: String, fusions: Vec<Fusion>) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn new(ref_file: &str, fusions: Vec<Fusion>) -> Result<Self, Box<dyn Error>> {
         let mut m_reference = FastaReader::new(&ref_file, false)?;
+
+        log::debug!("Reading reference, {}", &ref_file);
         m_reference.read_all();
+
         Ok(Self {
-            m_ref_file: ref_file,
+            m_ref_file: ref_file.to_string(),
             m_reference: Some(m_reference),
             m_fusions: fusions,
             m_unique_pos: 0,
             m_dupe_pos: 0,
             m_kmer_pos: HashMap::new(),
-            m_bloom_filter: [0; BLOOM_FILTER_SIZE],
+            m_bloom_filter: vec![0; BLOOM_FILTER_SIZE].into_boxed_slice(),
             m_dupe_list: Vec::new(),
             m_fusion_seq: Vec::new(),
         })
@@ -94,15 +100,25 @@ impl Indexer {
         self.m_reference.as_ref()
     }
 
-    fn make_index(&mut self) {
+    pub(crate) fn get_ref_mut(&mut self) -> Option<&mut FastaReader> {
+        self.m_reference.as_mut()
+    }
+
+    pub(crate) fn make_index(&mut self) {
         if self.m_reference.is_none() {
             return;
         }
 
-        for ctg in (0..self.m_fusions.len()) {
+        log::debug!("Index iter len={}", self.m_fusions.len());
+        let pbar = prepare_pbar(self.m_fusions.len() as u64);
+        for ctg in (0..self.m_fusions.len()).map(|e| {
+            pbar.inc(1);
+            e
+        }) {
             let gene = &self.m_fusions.get(ctg).unwrap().m_gene;
             let mut chr = gene.m_chr.clone();
 
+            // log::debug!("gene={:?}", gene);
             let seq_ref = &self.m_reference.as_ref().unwrap().m_all_contigs;
             if seq_ref.is_empty() {
                 if let Some(key) = check_map_has_key_then_get_back(seq_ref, format!("chr{}", chr)) {
@@ -125,13 +141,18 @@ impl Indexer {
                 .take((gene.m_end - gene.m_start) as usize)
                 .collect::<String>();
             s = s.to_uppercase();
-            self.m_fusion_seq.push(s.clone());
+            
+
+            log::debug!("Indexing contig forward...",);
             //index forward
             self.index_contig(ctg, &s, 0);
 
+            log::debug!("Indexing contig reverse...",);
             //index reverse complement
             let rev_comp_seq = reverse_complement(&s);
             self.index_contig(ctg, &rev_comp_seq, 1 - (s.chars().count() as i32));
+
+            self.m_fusion_seq.push(s);
         }
 
         self.fill_bloom_filter();
@@ -141,8 +162,14 @@ impl Indexer {
     fn index_contig(&mut self, ctg: usize, seq: &str, start: i32) {
         let mut kmer = -1_i32;
 
-        for i in (0..seq.chars().count()) {
-            kmer = make_kmer(seq, i, kmer, 1);
+        let seq_cv = seq.chars().collect::<Vec<char>>();
+
+        log::debug!(
+            "Index contig={ctg}, start={start}, seq_char_len={}",
+            seq_cv.len()
+        );
+        for i in (0..(seq_cv.len() as i32 - KMER)) {
+            kmer = make_kmer_cv(&seq_cv, i, kmer, 1);
             if kmer < 0 {
                 continue;
             }
@@ -186,7 +213,8 @@ impl Indexer {
                     self.m_dupe_pos += 1;
                 }
             } else {
-                *self.m_kmer_pos.get_mut(&kmer).unwrap() = site;
+                // log::debug!("kmer={}, m_kmer_pos={:#?}", kmer, self.m_kmer_pos);
+                self.m_kmer_pos.insert(kmer, site);
                 self.m_unique_pos += 1;
             }
         }
@@ -201,18 +229,18 @@ impl Indexer {
         }
     }
 
-    fn map_read(&mut self, r: SequenceRead) -> Vec<SeqMatch> {
+    pub(crate) fn map_read(&mut self, r: &SequenceRead) -> Vec<SeqMatch> {
         let mut kmer_stat: HashMap<i64, i32> = HashMap::new();
 
         kmer_stat.insert(0, 0);
 
         let seq = r.m_seq.m_str.as_str();
         let step = 2_usize;
-        let seqlen = seq.chars().count();
+        let seqlen = seq.chars().count() as i32;
 
         // first pass, we only want to find if this seq can be partially aligned to the target
         let mut kmer = -1;
-        for i in (0..(seqlen - KMER as usize + 1)).step_by(step) {
+        for i in (0..(seqlen as i32 - KMER + 1)).step_by(step) {
             kmer = make_kmer(seq, i, kmer, step as i32);
 
             if kmer < 0 {
@@ -273,7 +301,7 @@ impl Indexer {
 
         // second pass, make the mask
         kmer = -1;
-        for i in (0..(seqlen - KMER as usize + 1)) {
+        for i in (0..(seqlen as i32 - KMER + 1)) {
             kmer = make_kmer(seq, i, kmer, 1);
             if kmer < 0 {
                 continue;
@@ -323,7 +351,7 @@ impl Indexer {
         }
 
         let mut mismatches = 0;
-        mask.iter_mut().take(seqlen).for_each(|m| {
+        mask.iter_mut().take(seqlen as usize).for_each(|m| {
             if *m == MATCH_NONE || *m == MATCH_UNKNOWN {
                 mismatches += 1;
             }
@@ -338,7 +366,7 @@ impl Indexer {
     }
 
     /// this function is to gurantee that all the supporting reads will have same direction
-    fn in_required_direction(&self, mapping: &[SeqMatch]) -> bool {
+    pub(crate) fn in_required_direction(&self, mapping: &[SeqMatch]) -> bool {
         if mapping.len() < 2 {
             return false;
         }
@@ -394,7 +422,9 @@ impl Indexer {
                 return true;
             }
             // or smaller positive if contig is the same
-            if left.start_gp.contig == right.start_gp.contig && left.start_gp.position.abs() < right.start_gp.position.abs() {
+            if left.start_gp.contig == right.start_gp.contig
+                && left.start_gp.position.abs() < right.start_gp.position.abs()
+            {
                 return true;
             } else {
                 return false;
@@ -408,10 +438,9 @@ impl Indexer {
         println!("m_unique_pos:{}", self.m_unique_pos);
         println!("m_dupe_pos:{}", self.m_dupe_pos);
     }
-
 }
 
-fn segment_mask(mask: &[u8], seqlen: usize, gp1: GenePos, gp2: GenePos) -> Vec<SeqMatch> {
+fn segment_mask(mask: &[u8], seqlen: i32, gp1: GenePos, gp2: GenePos) -> Vec<SeqMatch> {
     let mut result: Vec<SeqMatch> = Vec::new();
 
     const ALLOWED_GAP: i32 = 10;
@@ -425,12 +454,12 @@ fn segment_mask(mask: &[u8], seqlen: usize, gp1: GenePos, gp2: GenePos) -> Vec<S
         let mut max_end = -1_i32;
 
         // get gp1
-        let mut start = 0;
-        let mut end = 0;
+        let mut start = 0_i32;
+        let mut end = 0_i32;
 
         loop {
             // get next start
-            while *mask.get(start).unwrap() as i32 != target && start != seqlen - 1 {
+            while *mask.get(start as usize).unwrap() as i32 != target && start != seqlen - 1 {
                 start += 1;
             }
             // reach the tail
@@ -438,16 +467,16 @@ fn segment_mask(mask: &[u8], seqlen: usize, gp1: GenePos, gp2: GenePos) -> Vec<S
                 break;
             }
 
-            if *mask.get(start).unwrap() as i32 == target {
+            if *mask.get(start as usize).unwrap() as i32 == target {
                 end = start + 1;
                 // get the end
-                let mut g = 0_usize;
-                while (g < ALLOWED_GAP as usize) && (end + g) < seqlen {
-                    if *mask.get(end + g).unwrap() as i32 > target {
+                let mut g = 0_i32;
+                while (g < ALLOWED_GAP) && (end + g) < seqlen {
+                    if *mask.get((end + g) as usize).unwrap() as i32 > target {
                         break;
                     }
 
-                    if end + g < seqlen && *mask.get(end + g).unwrap() as i32 == target {
+                    if end + g < seqlen && *mask.get((end + g) as usize).unwrap() as i32 == target {
                         end += g + 1;
                         g = 0;
                         continue;
@@ -457,7 +486,7 @@ fn segment_mask(mask: &[u8], seqlen: usize, gp1: GenePos, gp2: GenePos) -> Vec<S
                 }
                 // left shift to remove the mismatched end
                 end -= 1;
-                if end - start > (max_end - max_start) as usize {
+                if end - start > (max_end - max_start) {
                     max_end = end as i32;
                     max_start = start as i32;
                 }
@@ -485,7 +514,7 @@ fn concat_i32_bits_into_i64(two_i32_array: [i32; 2]) -> i64 {
 }
 
 #[inline]
-fn shift(gp: &GenePos, i: i32) -> GenePos {
+pub(crate) fn shift(gp: &GenePos, i: i32) -> GenePos {
     GenePos {
         contig: gp.contig,
         position: gp.position - i,
@@ -493,7 +522,7 @@ fn shift(gp: &GenePos, i: i32) -> GenePos {
 }
 
 #[inline]
-fn gp_to_i64(gp: &GenePos) -> i64 {
+pub(crate) fn gp_to_i64(gp: &GenePos) -> i64 {
     let ret = gp.contig as i64;
 
     let concated_bits = concat_i32_bits_into_i64([gp.position, 0]);
@@ -504,25 +533,25 @@ fn gp_to_i64(gp: &GenePos) -> i64 {
 }
 
 #[inline]
-fn i64_to_gp(val: i64) -> GenePos {
+pub(crate) fn i64_to_gp(val: i64) -> GenePos {
     GenePos {
         contig: (val.wrapping_shr(32)) as i16,
         position: (val & 0x00000000FFFFFFFF) as i32,
     }
 }
 
-fn make_mask(mask: &mut [u8], flag: u8, seqlen: usize, start: usize, kmer_size: i32) {
-    let end_point = seqlen.min(start + kmer_size as usize);
+fn make_mask(mask: &mut [u8], flag: u8, seqlen: i32, start: i32, kmer_size: i32) {
+    let end_point = seqlen.min((start + kmer_size));
 
     mask.iter_mut()
-        .skip(start)
-        .take(end_point - start)
+        .skip(start as usize)
+        .take((end_point - start) as usize)
         .for_each(|m| {
             *m = (*m).max(flag);
         })
 }
 
-fn make_kmer(seq: &str, pos: usize, last_kmer: i32, step: i32) -> i32 {
+fn make_kmer(seq: &str, pos: i32, last_kmer: i32, step: i32) -> i32 {
     // else calculate it completely
     let mut kmer = 0;
 
@@ -534,19 +563,19 @@ fn make_kmer(seq: &str, pos: usize, last_kmer: i32, step: i32) -> i32 {
         start = KMER - step;
 
         if step == 1 {
-            kmer = (kmer & 0x3FFFFFFF) << 2;
+            kmer = (kmer & 0x3FFFFFFF).wrapping_shl(2);
         } else if step == 2 {
-            kmer = (kmer & 0x0FFFFFFF) << 2;
+            kmer = (kmer & 0x0FFFFFFF).wrapping_shl(2);
         } else if step == 3 {
-            kmer = (kmer & 0x03FFFFFF) << 2;
+            kmer = (kmer & 0x03FFFFFF).wrapping_shl(2);
         } else if step == 4 {
-            kmer = (kmer & 0x00FFFFFF) << 2;
+            kmer = (kmer & 0x00FFFFFF).wrapping_shl(2);
         }
     }
 
     for (base, i) in seq
         .chars()
-        .skip(pos + start as usize)
+        .skip((pos + start) as usize)
         .take((KMER - start) as usize)
         .zip(start..KMER)
     {
@@ -581,10 +610,71 @@ fn make_kmer(seq: &str, pos: usize, last_kmer: i32, step: i32) -> i32 {
     kmer
 }
 
+fn make_kmer_cv(seq: &[char], pos: i32, last_kmer: i32, step: i32) -> i32 {
+    // else calculate it completely
+    let mut kmer = 0;
+
+    let mut start = 0;
+
+    // re-use several bits
+    if last_kmer >= 0 {
+        kmer = last_kmer;
+        start = KMER - step;
+
+        if step == 1 {
+            kmer = (kmer & 0x3FFFFFFF).wrapping_shl(2);
+        } else if step == 2 {
+            kmer = (kmer & 0x0FFFFFFF).wrapping_shl(2);
+        } else if step == 3 {
+            kmer = (kmer & 0x03FFFFFF).wrapping_shl(2);
+        } else if step == 4 {
+            kmer = (kmer & 0x00FFFFFF).wrapping_shl(2);
+        }
+    }
+
+    for (base, i) in seq
+        .get(((pos + start) as usize)..((pos + KMER) as usize))
+        .unwrap_or_else(
+            || panic!("seq_cv_len={}, pos={}, s={}, e={}", seq.len(), pos, pos + start, pos + KMER)
+        )
+        .iter()
+        .zip(start..KMER)
+    {
+        match base {
+            'A' => {
+                kmer += 0;
+                break;
+            }
+            'T' => {
+                kmer += 1;
+                break;
+            }
+            'C' => {
+                kmer += 2;
+                break;
+            }
+            'G' => {
+                kmer += 3;
+                break;
+            }
+            _ => {
+                return -1;
+            }
+        }
+
+        // not the tail
+        if (i < KMER - 1) {
+            kmer = kmer << 2;
+        }
+    }
+
+    kmer
+}
+
 #[inline(always)]
-fn check_map_has_key_then_get_back<K, V>(map: &HashMap<K, V>, key: K) -> Option<K>
+fn check_map_has_key_then_get_back<K, V>(map: &BTreeMap<K, V>, key: K) -> Option<K>
 where
-    K: Hash + std::cmp::Eq,
+    K: Hash + std::cmp::Eq + Ord,
 {
     match map.contains_key(&key) {
         true => Some(key),
@@ -596,9 +686,12 @@ where
 mod test {
     use std::{array, ops::Shl};
 
-    use crate::core::{common::GenePos, indexer::concat_i32_bits_into_i64};
+    use crate::{
+        core::{common::GenePos, fusion::Fusion, indexer::concat_i32_bits_into_i64},
+        utils::logging::init_logger,
+    };
 
-    use super::{gp_to_i64, i64_to_gp};
+    use super::{gp_to_i64, i64_to_gp, Indexer};
 
     #[test]
     fn bit1() {
@@ -687,5 +780,20 @@ mod test {
         *ar = b;
 
         println!("{}", b);
+    }
+
+    #[test]
+    fn test_indexing() {
+        init_logger();
+        let fusion_list = Fusion::parse_csv(
+            "/home/eck/workspace/240115_genefuse_rust/genefuse_rust/genes/druggable.hg38.csv",
+        )
+        .unwrap();
+        let mut m_indexer = Indexer::new(
+            "/home/eck/workspace/240115_genefuse_rust/genefuse_rust/hg38.fa.gz",
+            fusion_list.clone(),
+        )
+        .unwrap();
+        m_indexer.make_index();
     }
 }

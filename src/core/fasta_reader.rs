@@ -1,5 +1,6 @@
+use std::panic::Location;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     error::Error,
     fs::File,
     io::{BufRead, BufReader, Read, self},
@@ -10,9 +11,9 @@ use std::{
 
 use flate2::read::MultiGzDecoder;
 
-use crate::aux::he::{ErrorExplained, OrExaplain, make_custom_error};
+use crate::aux::he::{make_custom_error, make_custom_error3, make_custom_error4, ErrorExplained, OrExaplain};
 
-make_custom_error!(EmptyFileError, "Loaded file is empty.");
+make_custom_error4!(EmptyFileError, "Loaded file is empty.");
 
 pub(crate) struct FastaReader {
     m_fasta_file: String,
@@ -24,7 +25,7 @@ pub(crate) struct FastaReader {
     pub(crate) m_current_sequence: String,
     pub(crate) m_current_id: String,
     pub(crate) m_current_description: String,
-    pub(crate) m_all_contigs: HashMap<String, String>,
+    pub(crate) m_all_contigs: BTreeMap<String, String>,
 }
 
 impl FastaReader {
@@ -51,7 +52,7 @@ impl FastaReader {
         {
             // do nothing
         } else {
-            Err(EmptyFileError::new())?
+            Err(EmptyFileError::new(&fasta_file))?
         }
 
         read_buf.clear();
@@ -63,7 +64,7 @@ impl FastaReader {
             m_current_sequence: String::new(),
             m_current_id: String::new(),
             m_current_description: String::new(),
-            m_all_contigs: HashMap::new(),
+            m_all_contigs: BTreeMap::new(),
 
             read_buf: read_buf,
         })
@@ -81,7 +82,7 @@ impl FastaReader {
         self.m_current_sequence.as_str()
     }
 
-    fn contigs(&self) -> &HashMap<String, String> {
+    fn contigs(&self) -> &BTreeMap<String, String> {
         &self.m_all_contigs
     }
 
@@ -141,6 +142,8 @@ impl FastaReader {
             }
 
         }
+
+        log::debug!("read header = {}, current_seq = {} ..", ss_header, ss_seq.chars().take(20).collect::<String>());
 
         self.m_current_id = ss_header;
         self.m_current_sequence = ss_seq;

@@ -3,6 +3,10 @@ use std::hash::Hash;
 use std::iter;
 use std::ops::BitAnd;
 
+fn bp() {
+
+}
+
 fn edit_distance_bpv<T, const N: usize>(
     cmap: &mut HashMap<T, [u64; N]>,
     v: &Vec<T>,
@@ -19,9 +23,9 @@ where
     let top = 1_u64.wrapping_shl((tlen - 1) as u32);
     let lmb = 1_u64.wrapping_shl(63);
 
-    eprintln!("top={top}");
-    eprintln!("lmb={lmb}");
-    eprintln!("vsize={vsize}");
+    // eprintln!("top={top}");
+    // eprintln!("lmb={lmb}");
+    // eprintln!("vsize={vsize}");
 
     let mut d0 = [0; N];
     let mut hp = [0; N];
@@ -66,8 +70,8 @@ where
             *vn.get_mut(r).unwrap() = d0.get(r).unwrap() & x;
         }
 
-        eprintln!("{}", hp.get(tmax).unwrap() & top);
-        eprintln!("{}", hn.get(tmax).unwrap() & top);
+        // eprintln!("{}", hp.get(tmax).unwrap() & top);
+        // eprintln!("{}", hn.get(tmax).unwrap() & top);
         if (hp.get(tmax).unwrap() & top) != 0 {
             d += 1;
         } else if (hn.get(tmax).unwrap() & top) != 0 {
@@ -109,12 +113,12 @@ fn edit_distance_dp(str1: &str, size1: usize, str2: &str, size2: usize) -> usize
 type VARR<const N: usize> = [u64; N];
 fn edit_distance_map_<const N: usize>(a: &str, asize: usize, b: &str, bsize: usize) -> usize {
     let mut cmap: HashMap<char, VARR<N>> = HashMap::new();
-    let tmax = (asize - 1) >> 6;
+    let tmax = (asize - 1).wrapping_shr(6);
     let tlen = asize - tmax * 64;
 
-    eprintln!("asize={:b}", asize-1);
-    eprintln!("tmax={}", tmax);
-    eprintln!("tlen={}", tlen);
+    // eprintln!("asize={:b}", asize-1);
+    // eprintln!("tmax={}", tmax);
+    // eprintln!("tlen={}", tlen);
     for i in (0..tmax) {
         for j in (0..64) {
             *cmap
@@ -126,11 +130,15 @@ fn edit_distance_map_<const N: usize>(a: &str, asize: usize, b: &str, bsize: usi
     }
 
     for i in (0..tlen) {
+        // let cmapc = cmap.clone();
+
         *cmap
-            .get_mut(&a.chars().nth(tmax * 64 + i).unwrap())
-            .unwrap()
-            .get_mut(tmax)
-            .unwrap() |= (1_u64.wrapping_shl(i as u32));
+            .entry(a.chars().nth(tmax * 64 + i).unwrap())
+            .or_insert_with(|| [0; N])
+            .get_mut(tmax).unwrap() |= (1_u64.wrapping_shl(i as u32));
+            // .unwrap()
+            // .get_mut(tmax)
+            // .unwrap() |= (1_u64.wrapping_shl(i as u32));
     }
 
     edit_distance_bpv(
@@ -142,7 +150,7 @@ fn edit_distance_map_<const N: usize>(a: &str, asize: usize, b: &str, bsize: usi
     )
 }
 
-fn edit_distance<'s>(mut a: &'s str, mut asize: usize, mut b: &'s str, mut bsize: usize) -> usize {
+pub(crate) fn edit_distance<'s>(mut a: &'s str, mut asize: usize, mut b: &'s str, mut bsize: usize) -> usize {
     if asize == 0 {
         return bsize;
     } else if bsize == 0 {
@@ -177,7 +185,7 @@ fn edit_distance<'s>(mut a: &'s str, mut asize: usize, mut b: &'s str, mut bsize
     }
 }
 
-fn edit_distance_from_str(a: &str, b: &str) -> usize {
+pub(crate) fn edit_distance_from_str(a: &str, b: &str) -> usize {
     edit_distance(a, a.chars().count(), b, b.chars().count())
 }
 
@@ -254,4 +262,11 @@ mod test {
         println!("{}", 0_u64 | (1_i64 << 5) as u64);
         println!("{}", 0_u64 | (1_i64 << 5) as u64);
     }
+
+    #[test]
+    fn shrrr() {
+        println!("{}", (34_i32).wrapping_shr(6));
+        println!("{}", (34_i32) >> 6);
+    }
+
 }

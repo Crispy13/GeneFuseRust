@@ -46,6 +46,9 @@ where
     }
 }
 
+
+
+
 // impl<E:Error> From<E> for ErrorExplained
 // {
 //     #[track_caller]
@@ -195,6 +198,48 @@ macro_rules! make_custom_error3 {
 pub(crate) use make_custom_error3;
 
 
+macro_rules! make_custom_error4 {
+    ($n:ident, $($error_msg:tt)*) => {
+        pub(crate) struct $n {
+            cxt: String,
+            loc: String,
+        }
+
+        impl $n {
+            #[track_caller]
+            pub(crate) fn new<C: fmt::Debug>(cxt: &C) -> Self {
+                let loc = Location::caller();
+                Self {
+                    cxt: format!("{:?}", cxt),
+                    loc: format!("{}:{}:{}", loc.file(), loc.line(), loc.column()),
+                }
+            }
+        }
+
+        impl fmt::Display for $n {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, $($error_msg)*)
+                    // .and_then(|_| write!(f, " {}:{}:{}", ))
+                    // .and_then(|_| fmt::Display::fmt(&self.cxt, f))
+            }
+        }
+
+        impl fmt::Debug for $n {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct(stringify!($n)).field("cxt", &self.cxt).field("loc", &self.loc).finish()
+            }
+            // fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //     write!(f, "{}: ", stringify!($n))
+            //         .and_then(|_| fmt::Display::fmt(self, f))
+                    
+            // }
+        }
+
+        impl Error for $n {}
+    };
+}
+
+pub(crate) use make_custom_error4;
 
 
 

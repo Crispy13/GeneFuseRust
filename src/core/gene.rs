@@ -1,16 +1,17 @@
+use core::num;
 use std::{error::Error, fmt::Write};
 
 use crate::aux::he::OrExaplain;
 // use anyhow::Result;
 
-#[derive(Debug)]
-struct Exon {
+#[derive(Debug, Clone)]
+pub(crate) struct Exon {
     id: i32,
     start: i32,
     end: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Gene {
     pub(crate) m_name: String,
     pub(crate) m_chr: String,
@@ -166,6 +167,50 @@ impl Gene {
 
         Ok(ss)
     }
+
+    pub(crate) fn get_exon_intron(
+        &self,
+        pos: i32,
+        mut is_exon: bool,
+        mut number: i32,
+    ) -> () {
+        let pp = pos.abs() + self.m_start;
+
+        let mut prev_exon:Option<&Exon> = self.m_exons.first();
+        for (i, exon) in self.m_exons.iter().enumerate() {
+            if pp>= exon.start && pp <= exon.end {
+                is_exon = true;
+                number = exon.id;
+                break;
+            }
+
+            if i > 0 {
+                if self.m_reversed {
+                    if exon.end < pp && pp < prev_exon.unwrap().start {
+                        is_exon=false;
+                        number = exon.id-1;
+                        break;
+                    }
+                } else {
+                    if prev_exon.unwrap().end < pp && pp < exon.start {
+                        is_exon = false;
+                        number = exon.id-1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn gene_pos_2_chr_pos(&self, genepos: i32) -> i32 {
+        let mut chrpos = genepos.abs() + self.m_start;
+        if genepos < 0 {
+            chrpos *= -1;
+        }
+
+        chrpos
+    }
+    
 }
 
 impl Default for Gene {

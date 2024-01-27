@@ -8,7 +8,7 @@ use std::{
 use super::gene::Gene;
 
 // use anyhow::Result;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Fusion {
     pub(crate) m_gene: Gene,
 }
@@ -126,14 +126,14 @@ mod test {
                         return f.pos2str(31060).unwrap();
                     }
                 }
-    
+
                 if f.m_gene.m_name == "EML4" {
                     // exon6
                     if f.pos2str(95365).unwrap() != "EML4:exon:6|+chr2:42491855" {
                         return f.pos2str(95365).unwrap();
                     }
                     // intron 5
-                    if(f.pos2str(95346).unwrap()!="EML4:intron:5|+chr2:42491836") {
+                    if (f.pos2str(95346).unwrap() != "EML4:intron:5|+chr2:42491836") {
                         return f.pos2str(95346).unwrap();
                     }
                 }
@@ -143,6 +143,5 @@ mod test {
         };
 
         println!("{}", _inner());
-        
     }
 }

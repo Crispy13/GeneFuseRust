@@ -7,13 +7,28 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0.79", features = ["backtrace"] }
+chrono = "0.4.33"
 clap = { version = "4.4.16", features = ["cargo"] }
+crossbeam = "0.8.4"
 flate2 = { version ="1.0.28", features = ["zlib-ng"], default-features = false}
+indicatif = "0.17.7"
 log = "0.4.20"
 log4rs = "1.2.0"
+rayon = "1.8.1"
 tikv-jemallocator = "0.5.4"
 
 [profile.release]
 codegen-units=1
 lto=false
 debug = true
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "my_benchmark"
+harness = false
+
+
+
+

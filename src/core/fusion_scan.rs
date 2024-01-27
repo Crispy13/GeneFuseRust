@@ -1,3 +1,7 @@
+use std::error::Error;
+
+use super::{fusion::Fusion, pescanner::PairEndScanner};
+
 pub(crate) struct FusionScan {
     m_fusion_file: String,
     m_read1_file: String,
@@ -30,15 +34,26 @@ impl FusionScan {
         }
     }
 
-    fn scan(&self) {
-        // let fusions = Fusion::parse_csv(&self.m_fusion_file);
-        // if(mRead2File != ""){
-        //     PairEndScanner pescanner( mFusionFile, mRefFile, mRead1File, mRead2File, mHtmlFile, mJsonFile, mThreadNum);
-        //     return pescanner.scan();
-        // }
-        // else{
-        //     SingleEndScanner sescanner( mFusionFile, mRefFile, mRead1File, mHtmlFile, mJsonFile, mThreadNum);
-        //     return sescanner.scan();
-        // }
+    pub(crate) fn scan(self) -> Result<bool, Box<dyn Error>> {
+        // let fusions = Fusion::parse_csv(&self.m_fusion_file)?;
+
+        if self.m_read2_file != "" {
+            let mut pescanner = PairEndScanner::new(
+                self.m_fusion_file,
+                self.m_ref_file,
+                self.m_read1_file,
+                self.m_read2_file,
+                self.m_html_file,
+                self.m_json_file,
+                self.m_thread_num as i32,
+            );
+            
+            Ok(pescanner.scan()?)
+        } else {
+            unimplemented!()
+            // SingleEndScanner sescanner( mFusionFile, mRefFile, mRead1File, mHtmlFile, mJsonFile, mThreadNum);
+            // return sescanner.scan();
+        }
+
     }
 }

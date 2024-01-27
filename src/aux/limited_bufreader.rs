@@ -31,16 +31,19 @@ impl<T:BufRead> BufRead for LimitedBufReader<T> {
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> std::io::Result<usize> {
         match self.inner.read_until(byte, buf) {
             Ok(rl) => {
-                // Check unexected truncating happened.
-                if *buf.last().unwrap() != b'\n' {
-                    self.inner.set_limit(1);
-                    match self.inner.fill_buf() {
-                        Ok(bs) => {if bs.len() > 0 {
-                            panic!("{:?}", InsufficientTakeAmountError::new(&(buf, *bs.first().unwrap() as char)));
-                        }},
-                        Err(err) => Err(err)?,
+                if rl > 0 {
+                    // Check unexected truncating happened.
+                    if *buf.last().unwrap() != b'\n' {
+                        self.inner.set_limit(1);
+                        match self.inner.fill_buf() {
+                            Ok(bs) => {if bs.len() > 0 {
+                                panic!("{:?}", InsufficientTakeAmountError::new(&(buf, *bs.first().unwrap() as char)));
+                            }},
+                            Err(err) => Err(err)?,
+                        }
                     }
                 }
+                
 
                 self.inner.set_limit(self.limit); // reset limit to read more than once.
                 Ok(rl)
@@ -54,16 +57,19 @@ impl<T:BufRead> BufRead for LimitedBufReader<T> {
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
         match self.inner.read_line(buf) {
             Ok(rl) => {
-                // Check unexected truncating happened.
-                if *buf.as_bytes().last().unwrap() != b'\n' {
-                    self.inner.set_limit(1);
-                    match self.inner.fill_buf() {
-                        Ok(bs) => {if bs.len() > 0 {
-                            panic!("{:?}", InsufficientTakeAmountError::new(&(buf, *bs.first().unwrap() as char)));
-                        }},
-                        Err(err) => Err(err)?,
+                if rl > 0 {
+                    // Check unexected truncating happened.
+                    if *buf.as_bytes().last().unwrap() != b'\n' {
+                        self.inner.set_limit(1);
+                        match self.inner.fill_buf() {
+                            Ok(bs) => {if bs.len() > 0 {
+                                panic!("{:?}", InsufficientTakeAmountError::new(&(buf, *bs.first().unwrap() as char)));
+                            }},
+                            Err(err) => Err(err)?,
+                        }
                     }
                 }
+                
 
                 self.inner.set_limit(self.limit); // reset limit to read more than once.
                 Ok(rl)

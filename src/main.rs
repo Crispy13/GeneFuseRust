@@ -15,6 +15,6 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
     let config = set_configs();
-
+    
     genefuse(config)
 }

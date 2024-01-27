@@ -1,14 +1,18 @@
-pub(crate) mod fusion_scan;
-pub(crate) mod fusion;
-pub(crate) mod gene;
+pub(crate) mod common;
 pub(crate) mod edit_distance;
 pub(crate) mod fasta_reader;
 pub(crate) mod fastq_reader;
-pub(crate) mod read;
-pub(crate) mod sequence;
+pub(crate) mod fusion;
 pub(crate) mod fusion_mapper;
-pub(crate) mod indexer;
-pub(crate) mod common;
 pub(crate) mod fusion_result;
+pub(crate) mod fusion_scan;
+pub(crate) mod gene;
+pub(crate) mod html_reporter;
+pub(crate) mod indexer;
+pub(crate) mod json_reporter;
+pub(crate) mod matcher;
+pub(crate) mod overlap;
+pub(crate) mod read;
 pub(crate) mod read_match;
-
+pub(crate) mod sequence;
+pub(crate) mod pescanner;
