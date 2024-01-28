@@ -62,8 +62,8 @@ impl FusionResult {
 
         // if we can find an exact match with 0 gap, then use it
         // else we use the mean one
-        let mut left_total = 0;
-        let mut right_total = 0;
+        let mut left_total = 0_i64;
+        let mut right_total = 0_i64;
 
         for read_match in self.m_matches.iter() {
             if read_match.m_gap == 0 {
@@ -73,14 +73,14 @@ impl FusionResult {
                 return;
             }
 
-            left_total += read_match.m_left_gp.position;
-            right_total += read_match.m_right_gp.position;
+            left_total += read_match.m_left_gp.position as i64;
+            right_total += read_match.m_right_gp.position as i64;
         }
 
         self.m_left_gp.contig = self.m_matches.first().unwrap().m_left_gp.contig;
-        self.m_left_gp.contig = (left_total / self.m_matches.len() as i32) as i16;
+        self.m_left_gp.position = (left_total / self.m_matches.len() as i64) as i32;
         self.m_right_gp.contig = self.m_matches.first().unwrap().m_right_gp.contig;
-        self.m_right_gp.contig = (right_total / self.m_matches.len() as i32) as i16;
+        self.m_right_gp.position = (right_total / self.m_matches.len() as i64) as i32;
     }
 
     pub(crate) fn calc_unique(&mut self) -> () {
@@ -133,6 +133,14 @@ impl FusionResult {
             let start2 = offset.neg().max(0);
             let cmplen = len as i32 - offset.abs();
             if start1 >= (s1.len() as i32) || start2 >= (s2.len() as i32) {
+                log::debug!(
+                    "offset={}, start1={}, s1.len={}, start2={}, s2.len={}",
+                    offset,
+                    start1,
+                    s1.len(),
+                    start2,
+                    s2.len()
+                );
                 return true;
             }
             let ed = edit_distance_from_str(
@@ -142,6 +150,7 @@ impl FusionResult {
 
             let threshold = cmplen / 10;
             if (ed as i32) <= threshold {
+                log::debug!("offset={}, ed={}, threshold={}", offset, ed, threshold);
                 return true;
             }
         }
@@ -151,22 +160,31 @@ impl FusionResult {
 
     pub(crate) fn is_qualified(&self) -> bool {
         if self.m_unique < global_settings().unique_requirement as i32 {
+            log::debug!("m_unique={}", self.m_unique);
             return false;
         }
 
         if self.can_be_mapped() {
+            log::debug!("can_be_mapped=true",);
             return false;
         }
 
         if self.m_left_ref.len() <= 30 || self.m_right_ref.len() <= 30 {
+            log::debug!(
+                "self.m_left_ref.len(), self.m_right_ref.len() {}, {}",
+                self.m_left_ref.len(),
+                self.m_right_ref.len()
+            );
             return false;
         }
 
         if dis_connected_count(&self.m_left_ref.subchars(self.m_left_ref.len() - 10, 10)) <= 2 {
+            log::debug!("dis_connected_count 1",);
             return false;
         }
 
         if dis_connected_count(&self.m_right_ref.subchars(0, 10)) <= 2 {
+            log::debug!("dis_connected_count 2",);
             return false;
         }
 
@@ -227,30 +245,36 @@ impl FusionResult {
             if read_match.m_read_break + 1 > longest_left {
                 longest_left = read_match.m_read_break + 1;
             }
-            if read_match.m_read.len() - (read_match.m_read_break as usize + 1)
-                > longest_right as usize
-            {
-                longest_right =
-                    (read_match.m_read.len() - (read_match.m_read_break as usize + 1)) as i32;
+            if read_match.m_read.len() as i32 - (read_match.m_read_break + 1) > longest_right {
+                longest_right = read_match.m_read.len() as i32 - (read_match.m_read_break + 1);
             }
         }
-
+        log::debug!("ref_l.len={} ref_r.len={}", ref_l.len(), ref_r.len());
+        log::debug!("self.m_left_gp.position={}, self.m_right_gp.position={}, longest_left={} longest_right={}",
+                self.m_left_gp.position,
+                self.m_right_gp.position,
+                longest_left,
+                longest_right,
+            );
         self.m_left_ref = get_ref_seq(
             ref_l,
             self.m_left_gp.position - longest_left + 1,
             self.m_left_gp.position,
         );
+
         self.m_right_ref = get_ref_seq(
             ref_r,
             self.m_right_gp.position,
             self.m_right_gp.position + longest_right - 1,
         );
+        log::debug!("m_right_ref={}, ref_l.len={}, start={}, end={}", self.m_right_ref, ref_r.len(), self.m_right_gp.position, self.m_right_gp.position + longest_right - 1);
 
         self.m_left_ref_ext = get_ref_seq(
             ref_l,
             self.m_left_gp.position,
             self.m_left_gp.position + longest_right - 1,
         );
+        log::debug!("m_left_ref_ext={}, ref_l.len={}, start={}, end={}", self.m_left_ref_ext, ref_l.len(), self.m_left_gp.position, self.m_left_gp.position + longest_right - 1);
         self.m_right_ref_ext = get_ref_seq(
             ref_r,
             self.m_right_gp.position - longest_left + 1,
@@ -734,7 +758,7 @@ fn get_ref_seq(ref_s: &str, start: i32, end: i32) -> String {
         reverse_complement(
             &ref_s
                 .chars()
-                .skip(ref_s.chars().count() - end as usize)
+                .skip(end.neg() as usize)
                 .take(len)
                 .collect::<String>(),
         )

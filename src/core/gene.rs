@@ -22,7 +22,7 @@ pub(crate) struct Gene {
 }
 impl Gene {
     pub(crate) fn is_reversed(&self) -> bool {
-        todo!()
+        self.m_reversed
     }
 
     pub(crate) fn new(m_name: String, m_chr: String, m_start: i32, m_end: i32) -> Self {

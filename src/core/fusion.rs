@@ -5,6 +5,8 @@ use std::{
     io::{BufRead, BufReader, Read},
 };
 
+use crate::aux::limited_bufreader::LimitedBufReader;
+
 use super::gene::Gene;
 
 // use anyhow::Result;
@@ -21,7 +23,8 @@ impl Fusion {
     pub(crate) fn parse_csv(filename: &str) -> Result<Vec<Self>, Box<dyn Error>> {
         const max_line: usize = 4096;
 
-        let mut file = BufReader::new(File::open(filename)?).take(max_line as u64);
+        let mut file =
+            LimitedBufReader::new(BufReader::new(File::open(filename)?), max_line as u64);
         let mut line = Vec::<char>::with_capacity(max_line);
 
         let mut fusions: Vec<Self> = Vec::new();

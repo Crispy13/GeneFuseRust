@@ -16,18 +16,19 @@ pub(crate) fn init_logger() -> log4rs::Handle {
 
     let file_appender = FileAppender::builder()
         .encoder(pattern_encoder)
+        .append(false)
         .build("debug.log")
         .unwrap();
 
     let config = Config::builder()
         .appender(Appender::builder().build("file", Box::new(file_appender)))
-        .appender(Appender::builder().build("stderr", Box::new(stderr)))
+        // .appender(Appender::builder().build("stderr", Box::new(stderr)))
         // .logger(Logger::builder().build("app::backend::db", LevelFilter::Info))
         // .logger(Logger::builder()
         //     .appender("requests")
         //     .additive(false)
         //     .build("app::requests", LevelFilter::Info))
-        .build(Root::builder().appender("file").appender("stderr").build(LevelFilter::Debug))
+        .build(Root::builder().appender("file").build(LevelFilter::Debug))
         .unwrap();
 
     log4rs::init_config(config).unwrap()

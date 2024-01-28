@@ -10,20 +10,18 @@ use super::{fusion_mapper::FusionMapper, fusion_result::FusionResult};
 
 pub(crate) const FUSIONSCAN_VER: &str = env!("CARGO_PKG_VERSION");
 
-pub(crate) struct HtmlReporter<M> {
+pub(crate) struct HtmlReporter<'f> {
     m_filename: String,
-    m_fusion_mapper: M,//&'m mut FusionMapper,
+    m_fusion_mapper: &'f mut FusionMapper,
     m_file: BufWriter<File>,
     // m_fusion_results: Vec<FusionResult>,
 }
 
-impl<M> HtmlReporter<M>
-where
-    M: DerefMut<Target = FusionMapper>,
+impl<'f> HtmlReporter<'f>
 {
     pub(crate) fn new(
         filename: String,
-        mapper: M,
+        mapper: &'f mut FusionMapper,
     ) -> Result<Self, Box<dyn Error>> {
         let m_file = BufWriter::new(File::create(&filename)?);
         Ok(Self {
@@ -38,11 +36,17 @@ where
         &self.m_fusion_mapper.m_fusion_results
     }
 
-    pub(crate) fn run(&mut self) {
-        self.print_header();
-        self.print_helper();
-        self.print_fusions();
-        self.print_footer();
+    pub(crate) fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        log::debug!("printing header...");
+        self.print_header()?;
+        log::debug!("printing helper...");
+        self.print_helper()?;
+        log::debug!("printing fusions...");
+        self.print_fusions()?;
+        log::debug!("printing footer...");
+        self.print_footer()?;
+
+        Ok(())
     }
 
     fn print_header(&mut self) -> Result<(), Box<dyn Error>> {
@@ -148,7 +152,8 @@ where
         )?;
 
         write!(f, "</style>")?;
-        todo!()
+
+        Ok(())
     }
 
     fn print_js(&mut self) -> Result<(), Box<dyn Error>> {

@@ -1,12 +1,9 @@
 use rayon::{prelude::*, ThreadPoolBuilder};
 use std::{
-    error::Error,
-    sync::{
+    error::Error, panic::Location, sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Condvar, Mutex, RwLock,
-    },
-    thread::sleep,
-    time::Duration,
+    }, thread::sleep, time::Duration
 };
 
 use super::{
@@ -49,7 +46,7 @@ pub(crate) struct PairEndScanner {
     m_produce_finished: AtomicBool,
     m_fusion_mtx: CPPMutex,
     m_thread_num: i32,
-    m_fusion_mapper_o: Option<Mutex<FusionMapper>>,
+    m_fusion_mapper_o: Option<FusionMapper>,
 }
 
 impl PairEndScanner {
@@ -124,7 +121,7 @@ impl PairEndScanner {
         }
     }
 
-    fn produce_pack(&self, pack: ReadPairPack) {
+    fn produce_pack(&self, mut pack: ReadPairPack) {
         log::debug!("Entered produce_pack()");
         // lock m_repo.mtx;
 
@@ -135,11 +132,16 @@ impl PairEndScanner {
         // let wp = self.m_repo().write_pos;
         let m_repo = self.m_repo_o.as_ref().unwrap();
 
-        while m_repo.pack_buffer.is_full() {
-            // m_repo.repo_not_full.wait(m_repo);
+        loop {
+            match m_repo.pack_buffer.push(pack) {
+                Ok(_) => break,
+                Err(p) => {
+                    pack = p;
+                }
+            }
         }
 
-        m_repo.pack_buffer.push(pack).unwrap(); // *self.m_repo_mut().pack_buffer.get_mut(wp).unwrap() = pack;
+        // *self.m_repo_mut().pack_buffer.get_mut(wp).unwrap() = pack;
         m_repo.write_pos.fetch_add(1, Ordering::Relaxed);
         log::debug!("Add 1 to write_pos.");
 
@@ -198,6 +200,7 @@ impl PairEndScanner {
         self.produce_pack(pack);
 
         // lock self.m_repo().read_counter_mtx;
+        log::debug!("producing finished.");
         self.m_produce_finished.store(true, Ordering::Relaxed);
         // lock.unlock();
 
@@ -206,16 +209,17 @@ impl PairEndScanner {
 
     pub(crate) fn scan(&mut self) -> Result<bool, Box<dyn Error>> {
         log::debug!("Entered into scan.");
-        self.m_fusion_mapper_o = Some(Mutex::new(FusionMapper::from_ref_and_fusion_files(
+        self.m_fusion_mapper_o = Some(FusionMapper::from_ref_and_fusion_files(
             &self.m_ref_file,
             &self.m_fusion_file,
-        )?));
+        )?);
         log::debug!("Made fusion mapper.");
 
         self.init_pack_repository();
 
         let tp = ThreadPoolBuilder::new()
             .num_threads(self.m_thread_num as usize)
+            .thread_name(|i| format!("MainThreadPool-{i}"))
             .build()
             .unwrap();
 
@@ -229,21 +233,21 @@ impl PairEndScanner {
             }
         });
 
-        let mut m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap().lock().unwrap();
+        log::debug!("Produced and consumed all the tasks.");
+        let m_fusion_mapper = self.m_fusion_mapper_o.as_mut().unwrap();
 
+        log::debug!("run matches methods...");
         m_fusion_mapper.filter_matches();
         m_fusion_mapper.sort_matches();
         m_fusion_mapper.cluster_matches();
 
+        log::debug!("making html reports...");
         self.html_report().unwrap();
+        log::debug!("making json reports...");
         self.json_report().unwrap();
 
-        self.m_fusion_mapper_o
-            .as_ref()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .free_matches();
+        let m_fusion_mapper = self.m_fusion_mapper_o.as_mut().unwrap();
+        m_fusion_mapper.free_matches();
 
         Ok(true)
     }
@@ -269,6 +273,7 @@ impl PairEndScanner {
             }
         }
 
+        log::debug!("consuming finished.");
         Ok(())
     }
 
@@ -281,15 +286,15 @@ impl PairEndScanner {
         // lock self.m_repo().mtx;
 
         // read buffer is empty, just wait here.
-        while self.m_repo().write_pos.load(Ordering::Relaxed) as i32 % PACK_NUM_LIMIT
-            == self.m_repo().read_pos.load(Ordering::Relaxed) as i32 % PACK_NUM_LIMIT
-        {
-            if self.m_produce_finished.load(Ordering::Relaxed) {
-                // lock.unlock();
-                return Ok(());
-            }
-            // self.m_repo().repo_not_empty.wait(lock);
-        }
+        // while self.m_repo().write_pos.load(Ordering::Relaxed) as i32 % PACK_NUM_LIMIT
+        //     == self.m_repo().read_pos.load(Ordering::Relaxed) as i32 % PACK_NUM_LIMIT
+        // {
+        //     if self.m_produce_finished.load(Ordering::Relaxed) {
+        //         // lock.unlock();
+        //         return Ok(());
+        //     }
+        //     // self.m_repo().repo_not_empty.wait(lock);
+        // }
 
         // let data = self
         //     .m_repo_o
@@ -299,9 +304,17 @@ impl PairEndScanner {
         //     .get(self.m_repo().read_pos)
         //     .unwrap();
 
-        while self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {}
+        let data = loop {
+            if let Some(data) = self.m_repo_o.as_ref().unwrap().pack_buffer.pop() {
+                break data;
+            } else {
+                if self.m_produce_finished.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+            }
+        };
 
-        let data = self.m_repo_o.as_ref().unwrap().pack_buffer.pop().unwrap();
+        // let data = self.m_repo_o.as_ref().unwrap().pack_buffer.pop().unwrap();
 
         self.m_repo().read_pos.fetch_add(1, Ordering::Relaxed);
         log::debug!("Add 1 to read_pos.");
@@ -318,7 +331,7 @@ impl PairEndScanner {
     }
 
     fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Box<dyn Error>> {
-        let mut m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap().lock().unwrap();
+        let mut m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, pair) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
             // let pair = pack.data.get(p).unwrap();
@@ -333,8 +346,10 @@ impl PairEndScanner {
 
             let merged_rc;
             // if merged successfully, we only search the merged
+            log::debug!("p={}, merged={:?}", p, merged);
             if let Some(ref m) = merged {
                 let mut match_merged = m_fusion_mapper.map_read(m, &mut mapable, 2, 20)?;
+                // log::debug!("match_merged={:?}", match_merged);
                 if let Some(mut mm) = match_merged {
                     mm.add_original_pair(pair.clone());
                     self.push_match(mm);
@@ -385,14 +400,13 @@ impl PairEndScanner {
 
         Ok(true)
     }
+    #[track_caller]
     fn push_match(&self, m: ReadMatch) {
         // lock(self.m_fusion_mtx);
-        self.m_fusion_mapper_o
-            .as_ref()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .add_match(m.clone());
+        let loc = Location::caller();
+        log::debug!("push_match() called from {}:{}:{}", loc.file(), loc.line(), loc.column());
+
+        self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
         // lock.unlock();
     }
 
@@ -400,16 +414,16 @@ impl PairEndScanner {
         todo!()
     }
 
-    pub(crate) fn html_report(&self) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn html_report(&mut self) -> Result<(), Box<dyn Error>> {
         if self.m_html_file == "" {
             return Ok(());
         }
         let mut reporter = HtmlReporter::new(
             self.m_html_file.clone(),
-            self.m_fusion_mapper_o.as_ref().unwrap().lock().unwrap(),
+            self.m_fusion_mapper_o.as_mut().unwrap(),
         )?;
 
-        reporter.run();
+        reporter.run()?;
 
         Ok(())
     }
@@ -420,10 +434,10 @@ impl PairEndScanner {
         }
         let mut reporter = JsonReporter::new(
             self.m_json_file.clone(),
-            self.m_fusion_mapper_o.as_ref().unwrap().lock().unwrap(),
+            self.m_fusion_mapper_o.as_ref().unwrap(),
         )?;
 
-        reporter.run();
+        reporter.run()?;
 
         Ok(())
     }

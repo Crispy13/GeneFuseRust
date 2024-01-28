@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::iter;
+use std::{fmt, iter};
 use std::ops::BitAnd;
 
 fn bp() {
@@ -9,7 +9,7 @@ fn bp() {
 
 fn edit_distance_bpv<T, const N: usize>(
     cmap: &mut HashMap<T, [u64; N]>,
-    v: &Vec<T>,
+    v: &[T],
     vsize: usize,
     tmax: usize,
     tlen: usize,
@@ -17,6 +17,9 @@ fn edit_distance_bpv<T, const N: usize>(
 where
     T: Hash,
     T: std::cmp::Eq,
+    T: fmt::Debug,
+    T: fmt::Display,
+    T: Copy,
 {
     let mut d = tmax * 64 + tlen;
 
@@ -41,7 +44,11 @@ where
 
     for i in (0..vsize) {
         let ch = v.get(i).unwrap();
-        let pm = cmap.get_mut(ch).unwrap();
+        // let pm = match cmap.get_mut(ch) {
+        //     Some(v) => v,
+        //     None => panic!("cmap.keys()={:#?}, ch={}, i={}, v={:#?}",cmap.keys(), ch, i, v),
+        // };
+        let pm = cmap.entry(*ch).or_insert_with(|| [0; N]);
 
         for r in (0..=tmax) {
             let mut x = pm.get(r).unwrap().clone();
@@ -140,6 +147,8 @@ fn edit_distance_map_<const N: usize>(a: &str, asize: usize, b: &str, bsize: usi
             // .get_mut(tmax)
             // .unwrap() |= (1_u64.wrapping_shl(i as u32));
     }
+
+    log::debug!("tmax={}, tlen={}, a={}, b={}, cmap.keys()={:#?}, asize={}, bsize={}", tmax, tlen, a, b, cmap.keys(), asize, bsize);
 
     edit_distance_bpv(
         &mut cmap,

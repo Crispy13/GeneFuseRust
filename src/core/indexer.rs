@@ -37,6 +37,7 @@ const KMER: i32 = 16;
 const BLOOM_FILTER_SIZE: usize = (1_i32.wrapping_shl(29)) as usize;
 const BLOOM_FILTER_BITS: usize = BLOOM_FILTER_SIZE - 1;
 
+#[derive(Debug)]
 pub(crate) struct SeqMatch {
     pub(crate) seq_start: i32,
     pub(crate) seq_end: i32,
@@ -70,7 +71,7 @@ pub(crate) struct Indexer {
     m_unique_pos: i32,
     m_dupe_pos: i32,
 
-    pub(crate) m_kmer_pos: HashMap<i32, GenePos>,
+    pub(crate) m_kmer_pos: HashMap<i64, GenePos>,
     pub(crate) m_bloom_filter: Box<[u8]>, // `u8` in rust corresponds to unsigned char in C
     pub(crate) m_dupe_list: Vec<Vec<GenePos>>,
     pub(crate) m_fusion_seq: Vec<String>,
@@ -120,7 +121,7 @@ impl Indexer {
 
             // log::debug!("gene={:?}", gene);
             let seq_ref = &self.m_reference.as_ref().unwrap().m_all_contigs;
-            if seq_ref.is_empty() {
+            if !seq_ref.contains_key(&chr) {
                 if let Some(key) = check_map_has_key_then_get_back(seq_ref, format!("chr{}", chr)) {
                     chr = key;
                 } else if let Some(key) =
@@ -141,7 +142,6 @@ impl Indexer {
                 .take((gene.m_end - gene.m_start) as usize)
                 .collect::<String>();
             s = s.to_uppercase();
-            
 
             log::debug!("Indexing contig forward...",);
             //index forward
@@ -160,7 +160,7 @@ impl Indexer {
     }
 
     fn index_contig(&mut self, ctg: usize, seq: &str, start: i32) {
-        let mut kmer = -1_i32;
+        let mut kmer = -1_i64;
 
         let seq_cv = seq.chars().collect::<Vec<char>>();
 
@@ -174,9 +174,9 @@ impl Indexer {
                 continue;
             }
 
-            let mut site = GenePos::default();
-            site.contig = ctg as i16;
-            site.position = i as i32 + start;
+            let site = GenePos { contig: ctg as i16, position: i as i32 + start };
+            // site.contig = ctg as i16;
+            // site.position = i as i32 + start;
 
             // this is a dupe
             if let Some(gp) = self.m_kmer_pos.get(&kmer).and_then(|gp| Some(gp.clone())) {
@@ -189,7 +189,7 @@ impl Indexer {
                         >= global_settings().skip_key_dup_threshold
                     {
                         self.m_kmer_pos.get_mut(&kmer).unwrap().contig = DUPE_HIGH_LEVEL;
-                        self.m_dupe_list.insert(gp.position as usize, Vec::new());
+                        *self.m_dupe_list.get_mut(gp.position as usize).unwrap() = Vec::new();
                     } else {
                         self.m_dupe_list
                             .get_mut(gp.position as usize)
@@ -206,7 +206,7 @@ impl Indexer {
                     // and mark it as a dupe
                     {
                         let kmer_pos = self.m_kmer_pos.get_mut(&kmer).unwrap();
-                        kmer_pos.contig = DUPE_HIGH_LEVEL;
+                        kmer_pos.contig = DUPE_NORMAL_LEVEL;
                         kmer_pos.position = (self.m_dupe_list.len() - 1) as i32;
                     }
                     self.m_unique_pos -= 1;
@@ -229,19 +229,24 @@ impl Indexer {
         }
     }
 
-    pub(crate) fn map_read(&mut self, r: &SequenceRead) -> Vec<SeqMatch> {
+    pub(crate) fn map_read(&self, r: &SequenceRead) -> Vec<SeqMatch> {
+        // log::debug!("m_kmer_pos={:#?}", self.m_kmer_pos);
+
         let mut kmer_stat: HashMap<i64, i32> = HashMap::new();
 
         kmer_stat.insert(0, 0);
 
         let seq = r.m_seq.m_str.as_str();
-        let step = 2_usize;
-        let seqlen = seq.chars().count() as i32;
+        const step: usize = 2_usize;
+        let seq_cv = seq.chars().collect::<Vec<char>>();
+        let seqlen = seq_cv.len() as i32;
 
         // first pass, we only want to find if this seq can be partially aligned to the target
-        let mut kmer = -1;
+        let mut kmer = -1_i64;
+        log::debug!("map_read() -> seqlen={}", seqlen);
         for i in (0..(seqlen as i32 - KMER + 1)).step_by(step) {
-            kmer = make_kmer(seq, i, kmer, step as i32);
+            kmer = make_kmer_cv(&seq_cv, i, kmer, step as i32);
+            log::debug!("kmer={}, i={}", kmer, i);
 
             if kmer < 0 {
                 continue;
@@ -249,7 +254,10 @@ impl Indexer {
 
             let pos = kmer.wrapping_shr(3);
             let bit = kmer & 0x07;
-            if self.m_bloom_filter.get(pos as usize).unwrap() & (0x1 << bit) == 0 {
+            if self.m_bloom_filter.get(pos as usize).unwrap()
+                & (0x1_i64.wrapping_shl(bit as u32) as u8)
+                == 0
+            {
                 *kmer_stat.get_mut(&0).unwrap() += 1;
                 continue;
             }
@@ -262,11 +270,13 @@ impl Indexer {
                 let dupe_at_gp_pos = self.m_dupe_list.get(gp.position as usize).unwrap();
                 for g in (0..dupe_at_gp_pos.len()) {
                     let gplong = gp_to_i64(&shift(dupe_at_gp_pos.get(g).unwrap(), i as i32));
+                    log::debug!("gplong={} else if", gplong);
                     kmer_stat.entry(gplong).and_modify(|s| *s += 1).or_insert(1);
                 }
             } else {
                 // not a dupe
                 let gplong = gp_to_i64(&shift(gp, i as i32));
+                log::debug!("gplong={} else", gplong);
                 kmer_stat.entry(gplong).and_modify(|s| *s += 1).or_insert(1);
             }
         }
@@ -277,6 +287,7 @@ impl Indexer {
         let mut gp2 = 0_i64;
         let mut count2 = 0;
 
+        log::debug!("kmer_stat={:#?}", kmer_stat);
         //TODO: handle small difference caused by INDEL
         for (k, v) in kmer_stat.iter() {
             if *k != 0 && *v > count1 {
@@ -293,22 +304,24 @@ impl Indexer {
         if (count1 * step as i32) < global_settings().major_gene_key_requirement
             || (count2 * step as i32) < global_settings().minor_gene_key_requirement
         {
+            log::debug!("map_read, return empty vec. {}:{}", file!(), line!());
             // return an null list
             return Vec::new();
         }
 
-        let mut mask: Vec<u8> = Vec::with_capacity(MATCH_UNKNOWN as usize);
+        let mut mask: Vec<u8> = vec![MATCH_UNKNOWN; seqlen as usize];
 
         // second pass, make the mask
         kmer = -1;
         for i in (0..(seqlen as i32 - KMER + 1)) {
-            kmer = make_kmer(seq, i, kmer, 1);
+            kmer = make_kmer_cv(&seq_cv, i, kmer, 1);
             if kmer < 0 {
                 continue;
             }
             let pos = kmer.wrapping_shr(3);
             let bit = kmer & 0x07;
-            if self.m_bloom_filter.get(pos as usize).unwrap() & (0x1_u8.wrapping_shl(bit as u32))
+            if self.m_bloom_filter.get(pos as usize).unwrap()
+                & (0x1_u8.wrapping_shl(bit as u32) as u8)
                 == 0
             {
                 continue;
@@ -359,6 +372,7 @@ impl Indexer {
 
         if mismatches > global_settings().mismatch_threshold {
             // too many mismatch indicates not a real fusion
+            log::debug!("map_read, return empty vec. {}:{}", file!(), line!());
             return Vec::new();
         }
 
@@ -423,7 +437,8 @@ impl Indexer {
             }
             // or smaller positive if contig is the same
             if left.start_gp.contig == right.start_gp.contig
-                && left.start_gp.position.abs() < right.start_gp.position.abs()
+                && left.start_gp.position.abs() < left.start_gp.position.abs()
+            //TODO: left  < left ?
             {
                 return true;
             } else {
@@ -487,8 +502,8 @@ fn segment_mask(mask: &[u8], seqlen: i32, gp1: GenePos, gp2: GenePos) -> Vec<Seq
                 // left shift to remove the mismatched end
                 end -= 1;
                 if end - start > (max_end - max_start) {
-                    max_end = end as i32;
-                    max_start = start as i32;
+                    max_end = end;
+                    max_start = start;
                 }
                 start += 1;
             } else {
@@ -582,19 +597,15 @@ fn make_kmer(seq: &str, pos: i32, last_kmer: i32, step: i32) -> i32 {
         match base {
             'A' => {
                 kmer += 0;
-                break;
             }
             'T' => {
                 kmer += 1;
-                break;
             }
             'C' => {
                 kmer += 2;
-                break;
             }
             'G' => {
                 kmer += 3;
-                break;
             }
             _ => {
                 return -1;
@@ -610,7 +621,7 @@ fn make_kmer(seq: &str, pos: i32, last_kmer: i32, step: i32) -> i32 {
     kmer
 }
 
-fn make_kmer_cv(seq: &[char], pos: i32, last_kmer: i32, step: i32) -> i32 {
+fn make_kmer_cv(seq: &[char], pos: i32, last_kmer: i64, step: i32) -> i64 {
     // else calculate it completely
     let mut kmer = 0;
 
@@ -631,31 +642,33 @@ fn make_kmer_cv(seq: &[char], pos: i32, last_kmer: i32, step: i32) -> i32 {
             kmer = (kmer & 0x00FFFFFF).wrapping_shl(2);
         }
     }
-
-    for (base, i) in seq
+    let subseq = seq
         .get(((pos + start) as usize)..((pos + KMER) as usize))
-        .unwrap_or_else(
-            || panic!("seq_cv_len={}, pos={}, s={}, e={}", seq.len(), pos, pos + start, pos + KMER)
-        )
-        .iter()
-        .zip(start..KMER)
-    {
+        .unwrap_or_else(|| {
+            panic!(
+                "seq_cv_len={}, pos={}, s={}, e={}",
+                seq.len(),
+                pos,
+                pos + start,
+                pos + KMER
+            )
+        });
+
+    // log::debug!("subseq.len() = {}", subseq.len());
+    // log::debug!("pos={}, start={}, KMER = {}", pos, start, KMER);
+    for (base, i) in subseq.iter().zip(start..KMER) {
         match base {
             'A' => {
                 kmer += 0;
-                break;
             }
             'T' => {
                 kmer += 1;
-                break;
             }
             'C' => {
                 kmer += 2;
-                break;
             }
             'G' => {
                 kmer += 3;
-                break;
             }
             _ => {
                 return -1;
@@ -687,11 +700,14 @@ mod test {
     use std::{array, ops::Shl};
 
     use crate::{
-        core::{common::GenePos, fusion::Fusion, indexer::concat_i32_bits_into_i64},
+        core::{
+            common::GenePos, fusion::Fusion, indexer::concat_i32_bits_into_i64, read::SequenceRead,
+            sequence::Sequence,
+        },
         utils::logging::init_logger,
     };
 
-    use super::{gp_to_i64, i64_to_gp, Indexer};
+    use super::{gp_to_i64, i64_to_gp, make_kmer_cv, Indexer};
 
     #[test]
     fn bit1() {
@@ -795,5 +811,42 @@ mod test {
         )
         .unwrap();
         m_indexer.make_index();
+    }
+
+    #[test]
+    fn indexer_map_read() {
+        init_logger();
+        let fusion_list = Fusion::parse_csv(
+            "/home/eck/workspace/240115_genefuse_rust/genefuse_rust/genes/druggable.hg38.csv",
+        )
+        .unwrap();
+        let mut m_indexer = Indexer::new(
+            "/home/eck/workspace/240115_genefuse_rust/genefuse_rust/hg38.fa.gz",
+            fusion_list.clone(),
+        )
+        .unwrap();
+
+        m_indexer.make_index();
+
+        let s = SequenceRead { m_name: "@NB551106:23:HVMTYBGX2:2:12302:19642:13894 1:N:0:GATCAG merged_diff_0".into(), m_seq: Sequence { m_str: "CATCACACACCTTGACTGGTCCCCAGACAACAAGTATATAATGTCTAACTCGGGAGACTATGAAATATTGTACTGTAAGTATGAATGATTTTATATATATATATATATGCTATGATTATATTTATATATATAATAATTATTTTCCATATATCTGATTTTTAGCTTTGCATTTACTTTA".into() }, m_strand: "+".into(), m_quality: "A/AA/EEEEEAEEAEEEEEEAEEEAEAZZSZZZDZZZZZZZZZZZZZZZZZZSZZZZZZZZZZZZSZSSOZZZZZSSZZZZZZZZZZZVSSSZZZZZSZZZZZZZZZZSZZZZZZSZSZZZ=SZZZZZZZ=ZSZZZZSZZ=SZZZZJZZZZEEEA66AEEEEE666AEE6EEEA6A/A".into(), m_has_quality: true };
+
+        println!("{:?}", m_indexer.map_read(&s));
+    }
+
+    #[test]
+    fn use_parenthesis() {
+        println!("{}", 254_i32 - 234_u32 as i32 == 20_i32);
+        println!("{}", (254_i32 - 234_u32 as i32) == 20_i32);
+    }
+
+    #[test]
+    fn make_kmer_test() {
+        init_logger();
+        let seq = "CATCACACACCTTGACTGGTCCCCAGACAACAAGTATATAAT"
+            .chars()
+            .collect::<Vec<_>>();
+
+        println!("{}", seq.get(0..16).unwrap().len());
+        println!("{}", make_kmer_cv(&seq, 0, -1, 2));
     }
 }

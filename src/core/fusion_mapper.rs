@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     cmp::{Ordering, Reverse},
     error::Error,
+    sync::Mutex,
 };
 
 use crate::{
@@ -27,7 +28,7 @@ pub(crate) struct FusionMapper {
     pub(crate) m_fusion_match_size: i32,
     pub(crate) m_indexer: Indexer,
     pub(crate) fusion_list: Vec<Fusion>,
-    pub(crate) fusion_matches: Vec<Vec<ReadMatch>>,
+    pub(crate) fusion_matches: Mutex<Vec<Vec<ReadMatch>>>,
     pub(crate) m_fusion_results: Vec<FusionResult>,
 }
 
@@ -39,14 +40,16 @@ impl FusionMapper {
         let fusion_list = Fusion::parse_csv(fusion_file)?;
         log::debug!("Parsed csv.");
 
-        
+        // log::debug!("fusion_list={:#?}", fusion_list);
+
         let mut m_indexer = Indexer::new(ref_file, fusion_list.clone())?;
         m_indexer.make_index();
         log::debug!("Made index.");
 
+        // init()
         let m_fusion_match_size = fusion_list.len().pow(2);
 
-        let fusion_matches = Vec::with_capacity(m_fusion_match_size);
+        let fusion_matches = Mutex::new(vec![vec![]; m_fusion_match_size]);
 
         Ok(Self {
             m_ref_file: ref_file.to_string(),
@@ -63,7 +66,7 @@ impl FusionMapper {
     ///
     /// - qual_req = 20
     pub(crate) fn map_read(
-        &mut self,
+        &self,
         r: &SequenceRead,
         mapable: &mut bool,
         distance_req: i32,
@@ -71,8 +74,11 @@ impl FusionMapper {
     ) -> Result<Option<ReadMatch>, Box<dyn Error>> {
         let mut mapping = self.m_indexer.map_read(r);
 
+        log::debug!("mapping={:#?}", mapping);
+
         //we only focus on the reads that can be mapped to two genome positions
         if mapping.len() < 2 {
+            log::debug!("mapping.len()={}", mapping.len());
             *mapable = false;
             return Ok(None);
         }
@@ -80,12 +86,14 @@ impl FusionMapper {
         *mapable = true;
 
         //if the left part of mapping result is reverse, use its reverse complement alternative and skip this one
-        if self.m_indexer.in_required_direction(&mapping) {
+        if !self.m_indexer.in_required_direction(&mapping) {
+            log::debug!("in_required_direction = false");
             return Ok(None);
         }
 
         // TODO: set int readBreak, int leftContig, int leftPos, int rightContig, int rightPos
         let m = self.make_match(r, &mut mapping);
+        log::debug!("make_match res = {:#?}", m);
 
         Ok(m)
     }
@@ -122,6 +130,8 @@ impl FusionMapper {
         if left.seq_start > right.seq_start {
             (left, right) = (right, left);
         }
+
+        log::debug!("left.seq_start={}, right.seq_start={}", left.seq_start, right.seq_start);
 
         let read_break = (left.seq_end + right.seq_start) / 2;
         let left_gp = &mut left.start_gp;
@@ -203,19 +213,29 @@ impl FusionMapper {
         edit_distance(&ss, ss.len(), &ref_str, ref_str.len()) as i32
     }
 
-    pub(crate) fn add_match(&mut self, m: ReadMatch) -> () {
-        let left_config = m.m_left_gp.contig;
-        let right_config = m.m_right_gp.contig;
+    pub(crate) fn add_match(&self, m: ReadMatch) -> () {
+        let left_contig = m.m_left_gp.contig;
+        let right_contig = m.m_right_gp.contig;
 
-        let index = self.fusion_list.len() as i32 * right_config as i32 + left_config as i32;
+        log::debug!("add_match(), left_contig={}, right_contig={}", left_contig, right_contig);
 
-        self.fusion_matches.get_mut(index as usize).unwrap().push(m);
+        let index = self.fusion_list.len() as i32 * right_contig as i32 + left_contig as i32;
+
+        let mut fusion_matches = self.fusion_matches.lock().unwrap();
+
+        match fusion_matches.get_mut(index as usize) {
+            Some(v) => v.push(m),
+            None => panic!(
+                "index={}, fusion_mathces_len={}",
+                index,
+                fusion_matches.len()
+            ),
+        }
     }
-
     pub(crate) fn filter_matches(&mut self) -> () {
         // calc the sequence number before any filtering
         let mut total = 0;
-        for fm in self.fusion_matches.iter() {
+        for fm in self.fusion_matches.lock().unwrap().iter() {
             total += fm.len();
         }
 
@@ -229,7 +249,7 @@ impl FusionMapper {
 
     fn remove_by_complexity(&mut self) -> () {
         let mut removed = 0;
-        for fm in self.fusion_matches.iter_mut() {
+        for fm in self.fusion_matches.lock().unwrap().iter_mut() {
             fm.retain(|rm| {
                 let seq = rm.m_read.m_seq.m_str.as_str();
                 let read_break = rm.m_read_break;
@@ -257,20 +277,24 @@ impl FusionMapper {
         const DIFF_THRESHOLD: i32 = 5;
 
         let mut removed = 0;
-        self.fusion_matches.iter_mut().for_each(|fm| {
-            {
-                fm.retain(|rm| {
-                    let dec = rm.m_left_distance + rm.m_right_distance >= DIFF_THRESHOLD;
+        self.fusion_matches
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .for_each(|fm| {
+                {
+                    fm.retain(|rm| {
+                        let dec = rm.m_left_distance + rm.m_right_distance >= DIFF_THRESHOLD;
 
-                    if dec {
-                        removed += 1;
-                        false
-                    } else {
-                        true
-                    }
-                })
-            }
-        });
+                        if dec {
+                            removed += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    })
+                }
+            });
 
         log::info!("removeByDistance: {}", removed);
     }
@@ -280,22 +304,26 @@ impl FusionMapper {
         let INDEL_THRESHOLD = global_settings().deletion_threshold;
         let mut removed = 0;
 
-        self.fusion_matches.iter_mut().for_each(|fm| {
-            {
-                fm.retain(|rm| {
-                    let dec = rm.m_left_gp.contig == rm.m_right_gp.contig
-                        && (rm.m_left_gp.position - rm.m_right_gp.position).abs()
-                            < INDEL_THRESHOLD as i32;
+        self.fusion_matches
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .for_each(|fm| {
+                {
+                    fm.retain(|rm| {
+                        let dec = rm.m_left_gp.contig == rm.m_right_gp.contig
+                            && (rm.m_left_gp.position - rm.m_right_gp.position).abs()
+                                < INDEL_THRESHOLD as i32;
 
-                    if dec {
-                        removed += 1;
-                        false
-                    } else {
-                        true
-                    }
-                })
-            }
-        });
+                        if dec {
+                            removed += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    })
+                }
+            });
 
         log::info!("removeIndels: {}", removed);
     }
@@ -303,18 +331,26 @@ impl FusionMapper {
     pub(crate) fn sort_matches(&mut self) {
         // sort the matches to make the pileup more clear
         self.fusion_matches
+            .lock()
+            .unwrap()
             .sort_by(|a, b| b.partial_cmp(a).unwrap());
     }
 
     pub(crate) fn free_matches(&mut self) {
         // free it
-        self.fusion_matches.clear();
+        self.fusion_matches.lock().unwrap().clear();
     }
 
     pub(crate) fn cluster_matches(&mut self) {
-        for (i, fm) in
-            (0..(self.m_fusion_match_size)).zip(self.fusion_matches.iter().map(|e| e.as_slice()))
-        {
+        log::debug!("self.m_fusion_match_size={}", self.m_fusion_match_size);
+        log::debug!("fusion_matches_len={}", self.fusion_matches.lock().unwrap().len());
+        for (i, fm) in (0..(self.m_fusion_match_size)).zip(
+            self.fusion_matches
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| e.as_slice()),
+        ) {
             let mut frs = Vec::<FusionResult>::new();
             for (m, rm) in (0..fm.len()).zip(fm.iter()) {
                 let mut found = false;
@@ -332,20 +368,32 @@ impl FusionMapper {
                 }
             }
             for (f, mut fr) in (0..frs.len()).zip(frs.into_iter()) {
+                log::debug!("init -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+
                 fr.calc_fusion_point();
+
+                log::debug!("calc_fusion_point -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                log::debug!("fr.m_left_gp.contig={}, fr.m_right_gp.contig={}", fr.m_left_gp.contig, fr.m_right_gp.contig);
                 fr.make_reference(
                     self.m_indexer
                         .m_fusion_seq
                         .get(fr.m_left_gp.contig as usize)
-                        .unwrap(),
+                        .unwrap_or_else(||
+                            panic!("self.m_indexer.m_fusion_seq.len()={}, index={}", self.m_indexer.m_fusion_seq.len(), fr.m_left_gp.contig)
+                        ),
                     self.m_indexer
                         .m_fusion_seq
                         .get(fr.m_right_gp.contig as usize)
                         .unwrap(),
                 );
+
+                log::debug!("make_reference -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 fr.adjust_fusion_break();
+                log::debug!("adjust_fusion_break -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 fr.calc_unique();
+                log::debug!("calc_unique -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 fr.update_info(&self.fusion_list);
+                log::debug!("update_info -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 if fr.is_qualified() {
                     if !global_settings().output_deletions && fr.is_deletion() {
                         continue;
@@ -375,31 +423,38 @@ impl FusionMapper {
         let mut seqs: Vec<Sequence> = Vec::new();
 
         // first pass to gather all sequences
-        for fm in self.fusion_matches.iter_mut() {
+        for fm in self.fusion_matches.lock().unwrap().iter_mut() {
             for rm in fm.iter() {
                 seqs.push(rm.get_read().m_seq.clone());
             }
         }
 
+        log::debug!("making matcher...");
         let mut matcher = Matcher::from_ref_and_seqs(self.m_indexer.get_ref_mut(), &seqs);
 
         let mut removed = 0;
-        // second pass to remove alignable sequences
-        self.fusion_matches.iter_mut().for_each(|fm| {
-            {
-                fm.retain(|rm| {
-                    let mr = matcher.do_match(&rm.get_read().m_seq);
-                    let dec = mr.is_some();
 
-                    if dec {
-                        removed += 1;
-                        false
-                    } else {
-                        true
-                    }
-                })
-            }
-        });
+        log::debug!("removing alignable sequences...");
+        // second pass to remove alignable sequences
+        self.fusion_matches
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .for_each(|fm| {
+                {
+                    fm.retain(|rm| {
+                        let mr = matcher.do_match(&rm.get_read().m_seq);
+                        let dec = mr.is_some();
+
+                        if dec {
+                            removed += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    })
+                }
+            });
 
         log::info!("removeAlignables: {}", removed);
     }

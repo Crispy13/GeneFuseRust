@@ -294,13 +294,12 @@ impl SequenceReadPair {
             //     self.m_left.m_seq.m_str.subchars(0, offset as usize),
             //     rc_right.m_seq.m_str
             // );
-            let mut merged_seq_cv = self
-                .m_left
-                .m_seq
-                .m_str
-                .chars()
-                .take(offset as usize)
-                .chain(rc_right.m_seq.m_str.chars())
+            let mut merged_seq_cv = str1_cv
+                .get(..(offset as usize))
+                .unwrap()
+                .iter()
+                .copied()
+                .chain(str2_cv.iter().copied())
                 .collect::<Vec<char>>();
 
             // let merged_qual = format!(
@@ -308,12 +307,12 @@ impl SequenceReadPair {
             //     self.m_left.m_quality.subchars(0, offset as usize),
             //     rc_right.m_quality
             // );
-            let mut merged_qual_cv = self
-                .m_left
-                .m_quality
-                .chars()
-                .take(offset as usize)
-                .chain(rc_right.m_quality.chars())
+            let mut merged_qual_cv = qual1_cv
+                .get(..(offset as usize))
+                .unwrap()
+                .iter()
+                .copied()
+                .chain(qual2_cv.iter().copied())
                 .collect::<Vec<char>>();
 
             // quality adjuction and correction for low qual diff
@@ -328,9 +327,9 @@ impl SequenceReadPair {
                             *qual1_cv.get((offset + i) as usize).unwrap()
                     } else {
                         *merged_seq_cv.get_mut((offset + i) as usize).unwrap() =
-                            *str2_cv.get((offset + i) as usize).unwrap();
+                            *str2_cv.get((i) as usize).unwrap();
                         *merged_qual_cv.get_mut((offset + i) as usize).unwrap() =
-                            *qual2_cv.get((offset + i) as usize).unwrap()
+                            *qual2_cv.get((i) as usize).unwrap()
                     }
                 } else {
                     // add the quality of the pair to make a high qual

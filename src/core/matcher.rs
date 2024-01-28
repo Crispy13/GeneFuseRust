@@ -86,36 +86,87 @@ impl<'f> Matcher<'f> {
 
         let mut ctg = 0;
 
+        log::debug!("indexing contig per ctg_name...");
+        let mut seq_cv= Vec::new();
         for (ctg_name, s) in contig_ref.iter().map(|e| (e.0.as_str(), e.1.as_str())) {
-            let s = s.to_uppercase();
+            seq_cv.extend(s.chars().flat_map(|ch| ch.to_uppercase()));
+            // let s = s.to_uppercase();
             self.m_contig_names.push(ctg_name.to_owned());
 
             //index forward
-            self.index_contig(ctg, &s, 0);
+            self.index_contig_cv(ctg, &seq_cv, 0);
 
             //index reverse complement
             ctg += 1;
+            seq_cv.clear();
         }
 
         log::info!("matcher indexing done");
 
         self.m_reference.as_mut().unwrap().m_all_contigs = contig_ref;
-        todo!()
+        
+    }
+
+    fn index_contig_cv(&mut self, ctg: i32, seq: &[char], start: i32) {
+        let mut kmer = 0_u32;
+        let mut valid = false;
+
+        for (base, i) in seq.get(..((seq.len() as i32 - KMER) as usize)).unwrap().iter().zip(0..) {
+            if valid {
+                // let base = seq.get((i + KMER - 1) as usize).unwrap();
+                let num = base2num(*base);
+
+                if num < 0 {
+                    valid = false;
+                    continue;
+                } else {
+                    kmer = kmer.wrapping_shl(2) | num as u32;
+                }
+            } else {
+                kmer = make_kmer_cv(seq, i as usize, &mut valid);
+                if !valid {
+                    continue;
+                }
+            }
+            // check bloom filter
+            if self
+                .m_bloom_filter_array
+                .get(kmer.wrapping_shr(3) as usize)
+                .unwrap_or_else(||
+                    panic!("kmer={}, idx={} bfa_len={}", kmer, kmer.wrapping_shr(3) as usize, self.m_bloom_filter_array.len())
+                )
+                & (1_i32.wrapping_shl((kmer & 0x07) as u32)) as u8
+                == 0
+            {
+                continue;
+            }
+
+            let site = GenePos {
+                contig: ctg as i16,
+                position: i + start,
+            };
+
+            self.m_kmer_positions
+                .entry(kmer as u32)
+                .or_insert_with(|| Vec::new())
+                .push(site);
+        }
     }
 
     fn index_contig(&mut self, ctg: i32, seq: &str, start: i32) {
-        let mut kmer = 0_i32;
+        let mut kmer = 0_u32;
         let mut valid = false;
+
         for i in (0..(seq.len() - KMER as usize)).map(|e| e as i32) {
             if valid {
                 let base = seq.chars().nth((i + KMER - 1) as usize).unwrap();
                 let num = base2num(base);
 
                 if num < 0 {
-                    valid = true;
+                    valid = false;
                     continue;
                 } else {
-                    kmer = kmer.wrapping_shl(2) | num;
+                    kmer = kmer.wrapping_shl(2) | num as u32;
                 }
             } else {
                 kmer = make_kmer(seq, i as usize, &mut valid);
@@ -127,7 +178,9 @@ impl<'f> Matcher<'f> {
             if self
                 .m_bloom_filter_array
                 .get(kmer.wrapping_shr(3) as usize)
-                .unwrap()
+                .unwrap_or_else(||
+                    panic!("kmer={}, idx={} bfa_len={}", kmer, kmer.wrapping_shr(3) as usize, self.m_bloom_filter_array.len())
+                )
                 & (1_i32.wrapping_shl((kmer & 0x07) as u32)) as u8
                 == 0
             {
@@ -306,7 +359,7 @@ impl<'f> Matcher<'f> {
 
     }
 
-    fn is_consistent(&self, thisgp: i64, kmer: i32, seqpos: i32, threshold: i32) -> bool {
+    fn is_consistent(&self, thisgp: i64, kmer: u32, seqpos: i32, threshold: i32) -> bool {
         let gps = self.m_kmer_positions.get(&(kmer as u32)).unwrap();
         // align by seqpos
         let target = shift(&i64_to_gp(thisgp), -seqpos);
@@ -363,8 +416,44 @@ fn base2num(c: char) -> i32 {
     }
 }
 
-fn make_kmer(seq: &str, pos: usize, valid: &mut bool) -> i32 {
-    let mut kmer = 0_i32;
+fn make_kmer_cv(seq: &[char], pos: usize, valid: &mut bool) -> u32 {
+    let mut kmer = 0_u32;
+    for (i, base) in seq.get(pos..((pos as i32+KMER) as usize)).unwrap().iter().enumerate() {
+        match base {
+            'A' => {
+                kmer += 0;
+                break;
+            },
+            'T' => {
+                kmer += 1;
+                break;
+            },
+            'C' => {
+                kmer += 2;
+                break;
+            },
+            'G' => {
+                kmer += 3;
+                break;
+            },
+            _ => {
+                *valid = false;
+                return 0;
+            }
+        }
+
+        // not the tail
+        if (i as i32) < (KMER-1) {
+            kmer = kmer.wrapping_shl(2);
+        }
+    }
+
+    *valid = true;
+    kmer
+}
+
+fn make_kmer(seq: &str, pos: usize, valid: &mut bool) -> u32 {
+    let mut kmer = 0_u32;
     for (i, base) in seq.chars().skip(pos).take(KMER as usize).enumerate() {
         match base {
             'A' => {

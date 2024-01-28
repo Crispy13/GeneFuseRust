@@ -13,7 +13,7 @@ use super::{
     read::{SequenceRead, SequenceReadPair},
 };
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub(crate) struct ReadMatch {
     pub(crate) m_read: SequenceRead,
     pub(crate) m_original_reads: Vec<SequenceRead>,
