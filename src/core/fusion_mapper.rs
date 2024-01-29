@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    aux::global_settings::global_settings,
+    aux::{global_settings::global_settings, pbar::{prepare_pbar, PBSummary}},
     core::{fusion, sequence::Sequence},
     utils::{dis_connected_count, StringCPP},
 };
@@ -440,10 +440,14 @@ impl FusionMapper {
 
         log::info!("removing alignable sequences...");
         // second pass to remove alignable sequences
-        self.fusion_matches
+        {
+            let mut fusion_matches = self.fusion_matches
             .lock()
-            .unwrap()
-            .iter_mut()
+            .unwrap();
+            let pb = prepare_pbar(fusion_matches.len() as u64);
+            pb.set_message("do_matching...");
+            
+            fusion_matches.iter_mut()
             .for_each(|fm| {
                 {
                     fm.retain(|rm| {
@@ -456,10 +460,15 @@ impl FusionMapper {
                         } else {
                             true
                         }
-                    })
+                    });
+
+                    pb.inc(1);
+                    
                 }
             });
 
+            pb.finish();
+        }
         log::info!("removeAlignables: {}", removed);
     }
 

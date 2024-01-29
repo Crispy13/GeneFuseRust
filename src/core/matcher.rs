@@ -594,14 +594,14 @@ impl<'f> Matcher<'f> {
     pub(crate) fn do_match(&mut self, sequence: &Sequence) -> Option<MatchResult> {
         let rcseq = sequence.reverse_complement();
         
-        log::info!("map_to_index() sequence...");
+        // log::info!("map_to_index() sequence...");
         let mut mco = self.map_to_index(sequence);
 
         if let Some(ref mut mc) = mco {
             mc.reversed = false;
         }
 
-        log::info!("map_to_index() rcseq...");
+        // log::info!("map_to_index() rcseq...");
         let mut rcmco = self.map_to_index(&rcseq);
         if let Some(ref mut rcmc) = rcmco {
             rcmc.reversed = true;

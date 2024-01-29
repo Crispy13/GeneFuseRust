@@ -5,9 +5,19 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 pub fn prepare_pbar(len: u64) -> ProgressBar {
     let pb = ProgressBar::new(len);
     pb.set_draw_target(ProgressDrawTarget::stderr_with_hz(8));
+
+    let template = match len {
+        1.. => {
+            "{spinner:.green} [{elapsed_precise}] {msg} [{bar:.cyan/blue}] {pos}/{len} ({eta})"
+        },
+        0 => {
+            "{spinner:.green} [{elapsed_precise}] {msg} [ ? ] {pos} ({per_sec})"
+        }
+    };
+    
     pb.set_style(
         ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [ ? ] {pos} ({per_sec})",
+            template
         )
         .unwrap()
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
