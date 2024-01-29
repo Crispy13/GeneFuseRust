@@ -87,7 +87,7 @@ impl SequenceRead {
     }
 
     fn make_string_with_breaks(origin: &str, breaks: &[i32]) -> String {
-        let mut ret = origin.subchars(0, *breaks.get(0).unwrap() as usize);
+        let mut ret = origin.subchars(0, *breaks.get(0).unwrap() as usize).to_string();
 
         for i in (0..(breaks.len() - 1)) {
             write!(
@@ -122,9 +122,9 @@ impl SequenceRead {
             write!(
                 &mut ss,
                 "<a title='{}'><font color='{}'>{}</font></a>",
-                self.m_quality.chars().nth(i).unwrap(),
-                quality_color(self.m_quality.chars().nth(i).unwrap()),
-                self.m_seq.m_str.chars().nth(i).unwrap(),
+                self.m_quality.get(i..(i+1)).unwrap(),
+                quality_color(*self.m_quality.as_bytes().get(i).unwrap() as char),
+                self.m_seq.m_str.get(i..(i+1)).unwrap(),
             )
             .unwrap();
         }
@@ -141,7 +141,7 @@ impl SequenceRead {
 
         for (ch, i) in self.m_name.chars().rev().zip((0..=(len - 1)).rev()).skip(4) {
             if ch == ':' || ch == '+' {
-                return self.m_name.subchars(i + 1, len - i);
+                return self.m_name.subchars(i + 1, len - i).to_string();
             }
         }
 
@@ -162,7 +162,12 @@ impl SequenceRead {
 
     pub(crate) fn reverse_complement(&self) -> SequenceRead {
         let seq = reverse_complement(&self.m_seq.m_str);
-        let qual = self.m_quality.chars().rev().collect::<String>();
+        let qual = {
+            let mut qual = self.m_quality.clone().into_bytes();
+            qual.reverse();
+
+            String::from_utf8(qual).unwrap()
+        };
         let strand = {
             if self.m_strand == "+" {
                 "-"

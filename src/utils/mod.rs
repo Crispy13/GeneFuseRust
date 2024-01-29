@@ -24,18 +24,19 @@ pub(crate) fn check_file_valid(s: impl AsRef<Path>) -> () {
 }
 
 pub(crate) trait StringCPP {
-    fn subchars(&self, pos: usize, n: usize) -> String;
+    fn subchars(&self, pos: usize, n: usize) -> &str;
 }
 
 impl StringCPP for String {
-    fn subchars(&self, pos: usize, n: usize) -> String {
-        self.chars().skip(pos).take(n).collect::<String>()
+    fn subchars(&self, pos: usize, n: usize) -> &str {
+        // self.chars().skip(pos).take(n).collect::<String>()
+        self.get(pos..(pos+n)).unwrap()
     }
 }
 
 impl StringCPP for &str {
-    fn subchars(&self, pos: usize, n: usize) -> String {
-        self.chars().skip(pos).take(n).collect::<String>()
+    fn subchars(&self, pos: usize, n: usize) -> &str {
+        self.get(pos..(pos+n)).unwrap()
     }
 }
 #[inline]

@@ -250,11 +250,15 @@ impl<'f> HtmlReporter<'f>
                 "<li class='menu_item'><a href='#fusion_id_{}'> {}, {}</a></li>",
                 id, id, fr.m_title
             )?;
+            
         }
 
         write!(f, "</ul></div>")?;
 
         let mut id = 0;
+        log::debug!("print fusion for loop");
+        log::debug!("found={}, self.m_fusion_mapper.m_fusion_results.len()={}", found, self.m_fusion_mapper.m_fusion_results.len());
+
         for mut fusion in self.m_fusion_mapper.m_fusion_results.iter_mut() {
             if !global_settings().output_deletions && fusion.is_deletion() {
                 continue;
@@ -327,6 +331,7 @@ impl<'f> HtmlReporter<'f>
         write!(f, "</tr>")?;
         
         let read_matches = fusion.m_matches.as_slice();
+        log::debug!("print_fusion(): read_matches_len={}", read_matches.len());
         for (m, me) in read_matches.iter().enumerate() {
             let rowid = id*100000 + m as i32;
             write!(f, "<tr onclick='toggle({});'>", rowid)?;

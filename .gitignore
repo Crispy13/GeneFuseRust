@@ -6,3 +6,11 @@ hg38.fa
 *.log
 genes
 *.svg
+wget-log.1
+wget-log
+genefuse.R2.fq.gz
+genefuse.R1.fq.gz
+genefuse.R2.fq
+genefuse.R1.fq
+report.html
+report.json

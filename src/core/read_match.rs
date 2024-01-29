@@ -97,10 +97,6 @@ impl ReadMatch {
         breaks.push(self.m_read_break + 1);
         self.m_read.print_html_td_with_breaks(f, breaks)?;
 
-        let mut breaks = Vec::<i32>::new();
-        breaks.push(self.m_read_break + 1);
-
-        self.m_read.print_html_td_with_breaks(f, breaks)?;
 
         Ok(())
     }
@@ -128,7 +124,7 @@ impl ReadMatch {
 
     pub(crate) fn print(&self) {
         print!("break:{}", self.m_read_break + 1);
-        print!(", diff:({}{})", self.m_left_distance, self.m_right_distance);
+        print!(", diff:({} {})", self.m_left_distance, self.m_right_distance);
 
         if self.m_reversed {
             print!(", read direction: reversed complement");

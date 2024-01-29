@@ -362,18 +362,19 @@ impl FusionMapper {
                     }
                 }
                 if !found {
-                    let mut fr = FusionResult::default();
+                    let mut fr = FusionResult::with_minimum();
                     fr.add_match(rm.clone());
                     frs.push(fr);
                 }
             }
             for (f, mut fr) in (0..frs.len()).zip(frs.into_iter()) {
-                log::debug!("init -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
-
+                // log::debug!("init -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                log::debug!("init -> fusion_list={:#?}", self.fusion_list);
                 fr.calc_fusion_point();
+                log::debug!("calc_fusion_point -> fusion_list={:#?}", self.fusion_list);
 
-                log::debug!("calc_fusion_point -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
-                log::debug!("fr.m_left_gp.contig={}, fr.m_right_gp.contig={}", fr.m_left_gp.contig, fr.m_right_gp.contig);
+                // log::debug!("calc_fusion_point -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                // log::debug!("fr.m_left_gp.contig={}, fr.m_right_gp.contig={}", fr.m_left_gp.contig, fr.m_right_gp.contig);
                 fr.make_reference(
                     self.m_indexer
                         .m_fusion_seq
@@ -386,14 +387,17 @@ impl FusionMapper {
                         .get(fr.m_right_gp.contig as usize)
                         .unwrap(),
                 );
-
-                log::debug!("make_reference -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                log::debug!("make_reference -> fusion_list={:#?}", self.fusion_list);
+                // log::debug!("make_reference -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 fr.adjust_fusion_break();
-                log::debug!("adjust_fusion_break -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                log::debug!("adjust_fusion_break -> fusion_list={:#?}", self.fusion_list);
+                // log::debug!("adjust_fusion_break -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 fr.calc_unique();
-                log::debug!("calc_unique -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                log::debug!("calc_unique -> fusion_list={:#?}", self.fusion_list);
+                // log::debug!("calc_unique -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 fr.update_info(&self.fusion_list);
-                log::debug!("update_info -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
+                log::debug!("update_info -> fusion_list={:#?}", self.fusion_list);
+                // log::debug!("update_info -> fr.m_left_ref_ext={} fr.m_right_ref={}", fr.m_left_ref_ext, fr.m_right_ref);
                 if fr.is_qualified() {
                     if !global_settings().output_deletions && fr.is_deletion() {
                         continue;
@@ -429,12 +433,12 @@ impl FusionMapper {
             }
         }
 
-        log::debug!("making matcher...");
+        log::info!("making matcher...");
         let mut matcher = Matcher::from_ref_and_seqs(self.m_indexer.get_ref_mut(), &seqs);
 
         let mut removed = 0;
 
-        log::debug!("removing alignable sequences...");
+        log::info!("removing alignable sequences...");
         // second pass to remove alignable sequences
         self.fusion_matches
             .lock()

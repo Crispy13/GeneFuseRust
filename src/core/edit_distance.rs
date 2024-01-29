@@ -148,7 +148,7 @@ fn edit_distance_map_<const N: usize>(a: &str, asize: usize, b: &str, bsize: usi
             // .unwrap() |= (1_u64.wrapping_shl(i as u32));
     }
 
-    log::debug!("tmax={}, tlen={}, a={}, b={}, cmap.keys()={:#?}, asize={}, bsize={}", tmax, tlen, a, b, cmap.keys(), asize, bsize);
+    // log::debug!("tmax={}, tlen={}, a={}, b={}, cmap.keys()={:#?}, asize={}, bsize={}", tmax, tlen, a, b, cmap.keys(), asize, bsize);
 
     edit_distance_bpv(
         &mut cmap,

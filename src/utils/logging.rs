@@ -28,7 +28,7 @@ pub(crate) fn init_logger() -> log4rs::Handle {
         //     .appender("requests")
         //     .additive(false)
         //     .build("app::requests", LevelFilter::Info))
-        .build(Root::builder().appender("file").build(LevelFilter::Debug))
+        .build(Root::builder().appender("file").build(LevelFilter::Info))
         .unwrap();
 
     log4rs::init_config(config).unwrap()

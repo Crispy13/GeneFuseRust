@@ -217,16 +217,16 @@ impl PairEndScanner {
 
         self.init_pack_repository();
 
-        let tp = ThreadPoolBuilder::new()
+        ThreadPoolBuilder::new()
             .num_threads(self.m_thread_num as usize)
             .thread_name(|i| format!("MainThreadPool-{i}"))
-            .build()
+            .build_global()
             .unwrap();
 
-        tp.scope(|tps| {
+        rayon::scope(|tps| {
             tps.spawn(|tps| self.producer_task().unwrap());
 
-            for t in (0..(tp.current_num_threads() - 1)) {
+            for t in (0..(rayon::current_num_threads() - 1)) {
                 tps.spawn(|tps| {
                     self.consumer_task().unwrap();
                 })

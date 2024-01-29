@@ -227,13 +227,13 @@ impl FusionResult {
 
         self.m_left_gene.get_exon_intron(
             self.m_left_gp.position,
-            self.m_left_is_exon,
-            self.m_left_exon_or_intron_id,
+            &mut self.m_left_is_exon,
+            &mut self.m_left_exon_or_intron_id,
         );
         self.m_right_gene.get_exon_intron(
             self.m_right_gp.position,
-            self.m_right_is_exon,
-            self.m_right_exon_or_intron_id,
+            &mut self.m_right_is_exon,
+            &mut self.m_right_exon_or_intron_id,
         );
     }
 
@@ -267,14 +267,26 @@ impl FusionResult {
             self.m_right_gp.position,
             self.m_right_gp.position + longest_right - 1,
         );
-        log::debug!("m_right_ref={}, ref_l.len={}, start={}, end={}", self.m_right_ref, ref_r.len(), self.m_right_gp.position, self.m_right_gp.position + longest_right - 1);
+        log::debug!(
+            "m_right_ref={}, ref_l.len={}, start={}, end={}",
+            self.m_right_ref,
+            ref_r.len(),
+            self.m_right_gp.position,
+            self.m_right_gp.position + longest_right - 1
+        );
 
         self.m_left_ref_ext = get_ref_seq(
             ref_l,
             self.m_left_gp.position,
             self.m_left_gp.position + longest_right - 1,
         );
-        log::debug!("m_left_ref_ext={}, ref_l.len={}, start={}, end={}", self.m_left_ref_ext, ref_l.len(), self.m_left_gp.position, self.m_left_gp.position + longest_right - 1);
+        log::debug!(
+            "m_left_ref_ext={}, ref_l.len={}, start={}, end={}",
+            self.m_left_ref_ext,
+            ref_l.len(),
+            self.m_left_gp.position,
+            self.m_left_gp.position + longest_right - 1
+        );
         self.m_right_ref_ext = get_ref_seq(
             ref_r,
             self.m_right_gp.position - longest_left + 1,
@@ -501,8 +513,18 @@ impl FusionResult {
         &mut self,
         buf_writer: &mut BufWriter<File>,
     ) -> Result<(), Box<dyn Error>> {
+        log::debug!("self.m_left_gp.contig={}, self.m_right_gp.contig={}", self.m_left_gp.contig, self.m_right_gp.contig);
+        log::debug!("self.m_left_exon_or_intron_id={}, self.m_right_exon_or_intron_id={}", self.m_left_exon_or_intron_id,self.m_right_exon_or_intron_id);
+        log::debug!("self.m_left_gene.is_reversed={}, self.m_right_gene.is_reversed={}", self.m_left_gene.is_reversed(), self.m_right_gene.is_reversed());
+
         self.calc_left_exon_intron_number();
         self.calc_right_exon_intron_number();
+
+        log::debug!("self.m_left_is_exon={}, self.m_right_is_exon ={}, \
+        self.m_left_gene.m_exons.len()={}, self.m_right_gene.m_exons.len()={}, \
+        self.m_left_exon_num={}, self.m_left_intron_num={}, self.m_right_exon_num={}, self.m_right_intron_num={}",
+        self.m_left_is_exon, self.m_right_is_exon, self.m_left_gene.m_exons.len(), self.m_right_gene.m_exons.len(), self.m_left_exon_num, self.m_left_intron_num, self.m_right_exon_num, self.m_right_intron_num,
+    );
 
         let left_size = self.m_left_exon_num + self.m_left_intron_num;
         let right_size = self.m_right_exon_num + self.m_right_intron_num;
@@ -690,6 +712,8 @@ impl FusionResult {
                     percent,
                     "intron_right",
                 )?;
+                print_intron += 1.0;
+                intron += step;
             }
         }
 

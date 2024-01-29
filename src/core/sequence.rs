@@ -20,7 +20,7 @@ impl Sequence {
 }
 
 pub(crate) fn reverse_complement(seq:&str) -> String {
-    let mut s = seq.chars().collect::<Vec<char>>();
+    let mut s = seq.to_string().into_bytes();//seq.chars().collect::<Vec<char>>();
     let mut s_iter = s.iter_mut();
 
     // let (mut f, mut b);
@@ -45,17 +45,17 @@ pub(crate) fn reverse_complement(seq:&str) -> String {
         }
     }
 
-    s.into_iter().collect::<String>()
+    String::from_utf8(s).unwrap()
 
 }
 
-fn get_complement_base(base: &char) -> char {
+fn get_complement_base(base: &u8) -> u8 {
     match base {
-        'A' | 'a' => 'T',
-        'T' | 't' => 'A',
-        'C' | 'c' => 'G',
-        'G' | 'g' => 'C',
-        _=> 'N',
+        b'A' | b'a' => b'T',
+        b'T' | b't' => b'A',
+        b'C' | b'c' => b'G',
+        b'G' | b'g' => b'C',
+        _=> b'N',
     }
 }
 

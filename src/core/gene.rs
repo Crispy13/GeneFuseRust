@@ -171,30 +171,30 @@ impl Gene {
     pub(crate) fn get_exon_intron(
         &self,
         pos: i32,
-        mut is_exon: bool,
-        mut number: i32,
+        is_exon: &mut bool,
+        number: &mut i32,
     ) -> () {
         let pp = pos.abs() + self.m_start;
 
         let mut prev_exon:Option<&Exon> = self.m_exons.first();
         for (i, exon) in self.m_exons.iter().enumerate() {
             if pp>= exon.start && pp <= exon.end {
-                is_exon = true;
-                number = exon.id;
+                *is_exon = true;
+                *number = exon.id;
                 break;
             }
 
             if i > 0 {
                 if self.m_reversed {
                     if exon.end < pp && pp < prev_exon.unwrap().start {
-                        is_exon=false;
-                        number = exon.id-1;
+                        *is_exon=false;
+                        *number = exon.id-1;
                         break;
                     }
                 } else {
                     if prev_exon.unwrap().end < pp && pp < exon.start {
-                        is_exon = false;
-                        number = exon.id-1;
+                        *is_exon = false;
+                        *number = exon.id-1;
                         break;
                     }
                 }
