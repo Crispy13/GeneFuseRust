@@ -446,7 +446,7 @@ impl FusionMapper {
             .unwrap();
             let pb = prepare_pbar(fusion_matches.len() as u64);
             pb.set_message("do_matching...");
-            
+
             fusion_matches.iter_mut()
             .for_each(|fm| {
                 {
