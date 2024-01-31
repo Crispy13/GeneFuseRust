@@ -12,6 +12,7 @@ use std::{
 use flate2::read::MultiGzDecoder;
 
 use crate::aux::he::{make_custom_error, make_custom_error3, make_custom_error4, ErrorExplained, OrExaplain};
+use crate::aux::pbar::prepare_pbar;
 
 make_custom_error4!(EmptyFileError, "Loaded file is empty.");
 
@@ -143,7 +144,7 @@ impl FastaReader {
 
         }
 
-        log::debug!("read header = {}, current_seq = {} ..", ss_header, ss_seq.chars().take(20).collect::<String>());
+        // log::debug!("read header = {}, current_seq = {} ..", ss_header, ss_seq.chars().take(20).collect::<String>());
 
         self.m_current_id = ss_header;
         self.m_current_sequence = ss_seq;
@@ -152,12 +153,17 @@ impl FastaReader {
     }
 
     pub(crate) fn read_all(&mut self) {
+        let pbar = prepare_pbar(0);
+        pbar.set_message("Reading references...");
         while self.read_next() {
+            pbar.inc(1);
             self.m_all_contigs.insert(
                 mem::take(&mut self.m_current_id),
                 mem::take(&mut self.m_current_sequence),
             );
         }
+
+        pbar.finish_and_clear();
     }
 }
 

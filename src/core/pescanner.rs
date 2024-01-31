@@ -1,9 +1,15 @@
 use rayon::{prelude::*, ThreadPoolBuilder};
 use std::{
-    error::Error, panic::Location, sync::{
+    error::Error,
+    io::Write,
+    panic::Location,
+    process::exit,
+    sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Condvar, Mutex, RwLock,
-    }, thread::sleep, time::Duration
+    },
+    thread::sleep,
+    time::Duration,
 };
 
 use super::{
@@ -13,8 +19,14 @@ use super::{
     read::SequenceReadPair,
     read_match::ReadMatch,
 };
-use crate::core::{html_reporter::HtmlReporter, json_reporter::JsonReporter};
+use crate::{
+    core::{html_reporter::HtmlReporter, json_reporter::JsonReporter},
+    utils::open_csv,
+};
 use crossbeam::queue::ArrayQueue;
+
+
+pub const DBT: &'static str = "@NB551106:59:HTFV3BGX2:4:22605:18628:10037";
 
 #[derive(Debug)]
 struct ReadPairPack {
@@ -217,6 +229,12 @@ impl PairEndScanner {
 
         self.init_pack_repository();
 
+        // log::debug!("fusion_list={:#?}", self.m_fusion_mapper_o.as_ref().unwrap().fusion_list);
+
+        // for (k,v) in self.m_fusion_mapper_o.as_ref().unwrap().m_indexer.m_reference.as_ref().unwrap().m_all_contigs.iter() {
+        //     log::debug!("contig={}, seq_len={}, seq_5_from_start={}, seq_last_5_to_end={}", k, v.len(), v.get(..5).unwrap(), v.get((v.len()-5)..).unwrap())
+        // }
+
         ThreadPoolBuilder::new()
             .num_threads(self.m_thread_num as usize)
             .thread_name(|i| format!("MainThreadPool-{i}"))
@@ -235,6 +253,24 @@ impl PairEndScanner {
 
         log::debug!("Produced and consumed all the tasks.");
         let m_fusion_mapper = self.m_fusion_mapper_o.as_mut().unwrap();
+
+        // let mut obj_csv = open_csv();
+        // writeln!(&mut obj_csv, "i,j,mName").unwrap();
+        // m_fusion_mapper
+        //     .fusion_matches
+        //     .lock()
+        //     .unwrap()
+        //     .iter()
+        //     .enumerate()
+        //     .for_each(|(i, v)| {
+        //         v.iter().enumerate().for_each(|(j, rm)| {
+        //             writeln!(&mut obj_csv, "{},{},{}", i, j, rm.m_read.m_name).unwrap();
+        //         })
+        //     });
+
+        // drop(obj_csv);
+
+        // exit(0);
 
         log::debug!("run matches methods...");
         m_fusion_mapper.filter_matches();
@@ -330,8 +366,9 @@ impl PairEndScanner {
         Ok(())
     }
 
+    
     fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Box<dyn Error>> {
-        let mut m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
+        let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, pair) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
             // let pair = pack.data.get(p).unwrap();
@@ -342,13 +379,21 @@ impl PairEndScanner {
             let rcr2;
 
             let merged = pair.fast_merge();
+            if pair.m_left.m_name.contains(DBT) {
+                log::debug!("merged={:#?}", merged);
+            };
+
             let mut mapable = false;
 
             let merged_rc;
             // if merged successfully, we only search the merged
-            log::debug!("p={}, merged={:?}", p, merged);
+            // log::debug!("p={}, merged={:?}", p, merged);
             if let Some(ref m) = merged {
                 let mut match_merged = m_fusion_mapper.map_read(m, &mut mapable, 2, 20)?;
+                if pair.m_left.m_name.contains(DBT) {
+                    log::debug!("match_merged={:#?}", match_merged);
+                };
+
                 // log::debug!("match_merged={:?}", match_merged);
                 if let Some(mut mm) = match_merged {
                     mm.add_original_pair(pair.clone());
@@ -357,7 +402,9 @@ impl PairEndScanner {
                     merged_rc = m.reverse_complement();
                     let mut match_merged_rc =
                         m_fusion_mapper.map_read(&merged_rc, &mut mapable, 2, 20)?;
-
+                    if pair.m_left.m_name.contains(DBT) {
+                        log::debug!("match_merged_rc={:#?}", match_merged_rc);
+                    };
                     if let Some(mut mmr) = match_merged_rc {
                         mmr.add_original_pair(pair.clone());
                         self.push_match(mmr);
@@ -368,12 +415,18 @@ impl PairEndScanner {
             // else still search R1 and R2 separatedly
             mapable = false;
             let mut match_r1 = m_fusion_mapper.map_read(r1, &mut mapable, 2, 20)?;
+            if pair.m_left.m_name.contains(DBT) {
+                log::debug!("match_r1={:#?}", match_r1);
+            };
             if let Some(mut mr1) = match_r1 {
                 mr1.add_original_pair(pair.clone());
                 self.push_match(mr1);
             } else if mapable {
                 rcr1 = r1.reverse_complement();
                 let match_rcr1 = m_fusion_mapper.map_read(&rcr1, &mut mapable, 2, 20)?;
+                if pair.m_left.m_name.contains(DBT) {
+                    log::debug!("match_rcr1={:#?}", match_rcr1);
+                };
                 if let Some(mut mrc1) = match_rcr1 {
                     mrc1.add_original_pair(pair.clone());
                     mrc1.set_reversed(true);
@@ -384,18 +437,25 @@ impl PairEndScanner {
             mapable = false;
 
             let match_r2 = m_fusion_mapper.map_read(r2, &mut mapable, 2, 20)?;
+            if pair.m_left.m_name.contains(DBT) {
+                log::debug!("match_r2={:#?}", match_r2);
+            };
             if let Some(mut mr2) = match_r2 {
                 mr2.add_original_pair(pair.clone());
                 self.push_match(mr2);
             } else if mapable {
                 rcr2 = r2.reverse_complement();
                 let match_rcr2 = m_fusion_mapper.map_read(&rcr2, &mut mapable, 2, 20)?;
+                if pair.m_left.m_name.contains(DBT) {
+                    log::debug!("match_rcr2={:#?}", match_rcr2);
+                };
                 if let Some(mut mrc2) = match_rcr2 {
                     mrc2.add_original_pair(pair.clone());
                     mrc2.set_reversed(true);
                     self.push_match(mrc2);
                 }
             }
+            
         }
 
         Ok(true)
@@ -404,7 +464,16 @@ impl PairEndScanner {
     fn push_match(&self, m: ReadMatch) {
         // lock(self.m_fusion_mtx);
         let loc = Location::caller();
-        log::debug!("push_match() called from {}:{}:{}", loc.file(), loc.line(), loc.column());
+
+        if m.m_read.m_name.contains(DBT) {
+            log::debug!(
+                "push_match() called from {}:{}:{}",
+                loc.file(),
+                loc.line(),
+                loc.column()
+            );
+        }
+        
 
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
         // lock.unlock();

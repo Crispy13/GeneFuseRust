@@ -8,7 +8,8 @@ pub fn prepare_pbar(len: u64) -> ProgressBar {
 
     let template = match len {
         1.. => {
-            "{spinner:.green} [{elapsed_precise}] {msg} [{bar:.cyan/blue}] {pos}/{len} ({eta})"
+            "{spinner:.green} [{elapsed_precise}] {msg} [{bar:.cyan/blue}] {pos}/{len} ({eta}, {per_sec})"
+            // "{spinner:.green} [{elapsed_precise}] {msg} [{bar}] {pos}/{len} ({eta}, {per_sec})"
         },
         0 => {
             "{spinner:.green} [{elapsed_precise}] {msg} [ ? ] {pos} ({per_sec})"
@@ -23,7 +24,7 @@ pub fn prepare_pbar(len: u64) -> ProgressBar {
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
             write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
         })
-        .progress_chars("#>-"),
+        // .progress_chars("#>-"),
     );
 
     pb

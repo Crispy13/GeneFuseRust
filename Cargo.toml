@@ -15,6 +15,7 @@ indicatif = "0.17.7"
 log = "0.4.20"
 log4rs = "1.2.0"
 rayon = "1.8.1"
+rustc-hash = "1.1.0"
 tikv-jemallocator = "0.5.4"
 
 [profile.release]

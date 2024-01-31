@@ -6,8 +6,11 @@ use std::{
 };
 
 use crate::{
-    aux::{global_settings::global_settings, pbar::{prepare_pbar, PBSummary}},
-    core::{fusion, sequence::Sequence},
+    aux::{
+        global_settings::global_settings,
+        pbar::{prepare_pbar, PBSummary},
+    },
+    core::{fusion, pescanner::DBT, sequence::Sequence},
     utils::{dis_connected_count, StringCPP},
 };
 
@@ -74,11 +77,15 @@ impl FusionMapper {
     ) -> Result<Option<ReadMatch>, Box<dyn Error>> {
         let mut mapping = self.m_indexer.map_read(r);
 
-        log::debug!("mapping={:#?}", mapping);
+        if r.m_name.contains(DBT) {
+            log::debug!("mapping={:#?}", mapping);
+        }
 
         //we only focus on the reads that can be mapped to two genome positions
         if mapping.len() < 2 {
-            log::debug!("mapping.len()={}", mapping.len());
+            if r.m_name.contains(DBT) {
+                log::debug!("mapping.len()={}", mapping.len());
+            }
             *mapable = false;
             return Ok(None);
         }
@@ -87,13 +94,17 @@ impl FusionMapper {
 
         //if the left part of mapping result is reverse, use its reverse complement alternative and skip this one
         if !self.m_indexer.in_required_direction(&mapping) {
-            log::debug!("in_required_direction = false");
+            if r.m_name.contains(DBT) {
+                log::debug!("in_required_direction = false");
+            }
             return Ok(None);
         }
 
         // TODO: set int readBreak, int leftContig, int leftPos, int rightContig, int rightPos
         let m = self.make_match(r, &mut mapping);
-        log::debug!("make_match res = {:#?}", m);
+        if r.m_name.contains(DBT) {
+            log::debug!("make_match res = {:#?}", m);
+        }
 
         Ok(m)
     }
@@ -131,7 +142,11 @@ impl FusionMapper {
             (left, right) = (right, left);
         }
 
-        log::debug!("left.seq_start={}, right.seq_start={}", left.seq_start, right.seq_start);
+        // log::debug!(
+        //     "left.seq_start={}, right.seq_start={}",
+        //     left.seq_start,
+        //     right.seq_start
+        // );
 
         let read_break = (left.seq_end + right.seq_start) / 2;
         let left_gp = &mut left.start_gp;
@@ -217,7 +232,11 @@ impl FusionMapper {
         let left_contig = m.m_left_gp.contig;
         let right_contig = m.m_right_gp.contig;
 
-        log::debug!("add_match(), left_contig={}, right_contig={}", left_contig, right_contig);
+        log::debug!(
+            "add_match(), left_contig={}, right_contig={}",
+            left_contig,
+            right_contig
+        );
 
         let index = self.fusion_list.len() as i32 * right_contig as i32 + left_contig as i32;
 
@@ -234,10 +253,17 @@ impl FusionMapper {
     }
     pub(crate) fn filter_matches(&mut self) -> () {
         // calc the sequence number before any filtering
-        let mut total = 0;
-        for fm in self.fusion_matches.lock().unwrap().iter() {
-            total += fm.len();
-        }
+        // let mut total = 0;
+        // for fm in self.fusion_matches.lock().unwrap().iter() {
+        //     total += fm.len();
+        // }
+
+        let total = self
+            .fusion_matches
+            .lock()
+            .unwrap()
+            .iter()
+            .fold(0, |a, b| a + b.len());
 
         log::info!("sequence number before filtering: {}", total);
 
@@ -343,7 +369,10 @@ impl FusionMapper {
 
     pub(crate) fn cluster_matches(&mut self) {
         log::debug!("self.m_fusion_match_size={}", self.m_fusion_match_size);
-        log::debug!("fusion_matches_len={}", self.fusion_matches.lock().unwrap().len());
+        log::debug!(
+            "fusion_matches_len={}",
+            self.fusion_matches.lock().unwrap().len()
+        );
         for (i, fm) in (0..(self.m_fusion_match_size)).zip(
             self.fusion_matches
                 .lock()
@@ -379,9 +408,13 @@ impl FusionMapper {
                     self.m_indexer
                         .m_fusion_seq
                         .get(fr.m_left_gp.contig as usize)
-                        .unwrap_or_else(||
-                            panic!("self.m_indexer.m_fusion_seq.len()={}, index={}", self.m_indexer.m_fusion_seq.len(), fr.m_left_gp.contig)
-                        ),
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "self.m_indexer.m_fusion_seq.len()={}, index={}",
+                                self.m_indexer.m_fusion_seq.len(),
+                                fr.m_left_gp.contig
+                            )
+                        }),
                     self.m_indexer
                         .m_fusion_seq
                         .get(fr.m_right_gp.contig as usize)
@@ -441,19 +474,20 @@ impl FusionMapper {
         log::info!("removing alignable sequences...");
         // second pass to remove alignable sequences
         {
-            let mut fusion_matches = self.fusion_matches
-            .lock()
-            .unwrap();
-            let pb = prepare_pbar(fusion_matches.len() as u64);
-            pb.set_message("do_matching...");
+            let mut fusion_matches = self.fusion_matches.lock().unwrap();
+            // let pb = prepare_pbar(fusion_matches.len() as u64);
+            // pb.set_message("do_matching...");
 
-            fusion_matches.iter_mut()
-            .for_each(|fm| {
+            fusion_matches.iter_mut().for_each(|fm| {
                 {
+                    // let pb = prepare_pbar(fm.len() as u64);
+                    // pb.set_message("do_matching for a fusion match ...");
+                    
                     fm.retain(|rm| {
                         let mr = matcher.do_match(&rm.get_read().m_seq);
                         let dec = mr.is_some();
 
+                        // pb.inc(1);
                         if dec {
                             removed += 1;
                             false
@@ -462,12 +496,12 @@ impl FusionMapper {
                         }
                     });
 
-                    pb.inc(1);
-                    
+                    // pb.inc(1);
+                    // pb.finish_and_clear();
                 }
             });
 
-            pb.finish();
+            // pb.finish();
         }
         log::info!("removeAlignables: {}", removed);
     }
