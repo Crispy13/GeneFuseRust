@@ -12,9 +12,12 @@ genefuse.R2.fq.gz
 genefuse.R1.fq.gz
 genefuse.R2.fq
 genefuse.R1.fq
-report.html
-report.json
+*.html
+
 cmp.ipynb
 hg19.fa
 hg19.fa.gz
 object.tsv
+ff.sqlite
+plot1.png
+*.json
