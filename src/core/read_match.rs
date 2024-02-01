@@ -97,7 +97,6 @@ impl ReadMatch {
         breaks.push(self.m_read_break + 1);
         self.m_read.print_html_td_with_breaks(f, breaks)?;
 
-
         Ok(())
     }
 
@@ -117,14 +116,17 @@ impl ReadMatch {
         pad: &str,
     ) -> Result<(), Box<dyn Error>> {
         writeln!(f, "{}\"seq\":\"{}\",", pad, self.m_read.m_seq.m_str)?;
-        writeln!(f, "{}\"qual\":\"{}\",", pad, self.m_read.m_quality)?;
+        writeln!(f, "{}\"qual\":\"{}\"", pad, self.m_read.m_quality)?;
 
         Ok(())
     }
 
     pub(crate) fn print(&self) {
         print!("break:{}", self.m_read_break + 1);
-        print!(", diff:({} {})", self.m_left_distance, self.m_right_distance);
+        print!(
+            ", diff:({} {})",
+            self.m_left_distance, self.m_right_distance
+        );
 
         if self.m_reversed {
             print!(", read direction: reversed complement");
@@ -196,11 +198,23 @@ impl PartialOrd for ReadMatch {
             ord => return ord,
         }
 
-        self.m_read
+        // self.m_read
+        //     .m_seq
+        //     .m_str
+        //     .len()
+        //     .partial_cmp(&other.m_read.m_seq.m_str.len());
+
+        match other
+            .m_read
             .m_seq
             .m_str
-            .chars()
-            .count()
-            .partial_cmp(&other.m_read.m_seq.m_str.chars().count())
+            .len()
+            .partial_cmp(&self.m_read.m_seq.m_str.len())
+        {
+            Some(Ordering::Equal) => {},
+            ord => return ord,
+        }
+
+        self.m_read.m_name.partial_cmp(&other.m_read.m_name) // added 240201, not in original cpp code.
     }
 }

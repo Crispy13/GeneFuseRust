@@ -77,15 +77,15 @@ impl FusionMapper {
     ) -> Result<Option<ReadMatch>, Box<dyn Error>> {
         let mut mapping = self.m_indexer.map_read(r);
 
-        if r.m_name.contains(DBT) {
-            log::debug!("mapping={:#?}", mapping);
-        }
+        // if r.m_name.contains(DBT) {
+        //     log::debug!("mapping={:#?}", mapping);
+        // }
 
         //we only focus on the reads that can be mapped to two genome positions
         if mapping.len() < 2 {
-            if r.m_name.contains(DBT) {
-                log::debug!("mapping.len()={}", mapping.len());
-            }
+            // if r.m_name.contains(DBT) {
+            //     log::debug!("mapping.len()={}", mapping.len());
+            // }
             *mapable = false;
             return Ok(None);
         }
@@ -94,17 +94,17 @@ impl FusionMapper {
 
         //if the left part of mapping result is reverse, use its reverse complement alternative and skip this one
         if !self.m_indexer.in_required_direction(&mapping) {
-            if r.m_name.contains(DBT) {
-                log::debug!("in_required_direction = false");
-            }
+            // if r.m_name.contains(DBT) {
+            //     log::debug!("in_required_direction = false");
+            // }
             return Ok(None);
         }
 
         // TODO: set int readBreak, int leftContig, int leftPos, int rightContig, int rightPos
         let m = self.make_match(r, &mut mapping);
-        if r.m_name.contains(DBT) {
-            log::debug!("make_match res = {:#?}", m);
-        }
+        // if r.m_name.contains(DBT) {
+        //     log::debug!("make_match res = {:#?}", m);
+        // }
 
         Ok(m)
     }
@@ -358,8 +358,15 @@ impl FusionMapper {
         // sort the matches to make the pileup more clear
         self.fusion_matches
             .lock()
-            .unwrap()
-            .sort_by(|a, b| b.partial_cmp(a).unwrap());
+            .unwrap().iter_mut().for_each(|rmv|{
+                rmv.sort_by(|a, b| b.partial_cmp(a).unwrap());
+            });
+            
+
+
+
+
+        
     }
 
     pub(crate) fn free_matches(&mut self) {

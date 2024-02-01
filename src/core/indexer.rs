@@ -255,13 +255,13 @@ impl Indexer {
         let seq_cv = seq.chars().collect::<Vec<char>>();
         let seqlen = seq_cv.len() as i32;
 
-        let mut ocw = if r.m_name.contains(DBT) {
-            let ocw = ObjectTsvWriter::default();
+        // let mut ocw = if r.m_name.contains(DBT) {
+        //     let ocw = ObjectTsvWriter::default();
 
-            Some(ocw)
-        } else {
-            None
-        };
+        //     Some(ocw)
+        // } else {
+        //     None
+        // };
 
         // first pass, we only want to find if this seq can be partially aligned to the target
         let mut kmer = -1_i64;
@@ -320,10 +320,10 @@ impl Indexer {
 
         // log::debug!("kmer_stat={:#?}", kmer_stat);
         //TODO: handle small difference caused by INDEL
-        ocw.as_mut().and_then(|mut f| {
-            writeln!(&mut f, "kmer_stat={:?}", kmer_stat).unwrap();
-            Some(())
-        });
+        // ocw.as_mut().and_then(|mut f| {
+        //     writeln!(&mut f, "kmer_stat={:?}", kmer_stat).unwrap();
+        //     Some(())
+        // });
 
         for (k, v) in kmer_stat.iter() {
             if *k != 0 && *v > count1 {
@@ -337,10 +337,10 @@ impl Indexer {
             }
         }
 
-        ocw.as_mut().and_then(|mut f| {
-            writeln!(&mut f, "gp1={}, gp2={}, count1={}, count2={}", gp1, gp2, count1, count2).unwrap();
-            Some(())
-        });
+        // ocw.as_mut().and_then(|mut f| {
+        //     writeln!(&mut f, "gp1={}, gp2={}, count1={}, count2={}", gp1, gp2, count1, count2).unwrap();
+        //     Some(())
+        // });
 
         if (count1 * step as i32) < global_settings().major_gene_key_requirement
             || (count2 * step as i32) < global_settings().minor_gene_key_requirement
@@ -369,12 +369,12 @@ impl Indexer {
             //     Some(())
             // });
             if kmer < 0 {
-                ocw.as_mut().and_then(|mut f| {
-                    write!(&mut f, "\"k{}\",{},\"", kmer,i).unwrap();
-                    write!(&mut f, "\"\n", ).unwrap();
-                    // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                    Some(())
-                });
+                // ocw.as_mut().and_then(|mut f| {
+                //     write!(&mut f, "\"k{}\",{},\"", kmer,i).unwrap();
+                //     write!(&mut f, "\"\n", ).unwrap();
+                //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                //     Some(())
+                // });
                 continue;
             }
             let pos = kmer.wrapping_shr(3);
@@ -389,13 +389,13 @@ impl Indexer {
                 & (0x1_u8.wrapping_shl(bit as u32) as u8)
                 == 0
             {
-                ocw.as_mut().and_then(|mut f| {
-                    let c = format!("{}, {}", self.m_bloom_filter.get(pos as usize).unwrap(), (0x1_u8.wrapping_shl(bit as u32) as u8));
-                    write!(&mut f, "\"b{}\",{},\"", c,i).unwrap();
-                    write!(&mut f, "\"\n", ).unwrap();
-                    // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                    Some(())
-                });
+                // ocw.as_mut().and_then(|mut f| {
+                //     let c = format!("{}, {}", self.m_bloom_filter.get(pos as usize).unwrap(), (0x1_u8.wrapping_shl(bit as u32) as u8));
+                //     write!(&mut f, "\"b{}\",{},\"", c,i).unwrap();
+                //     write!(&mut f, "\"\n", ).unwrap();
+                //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                //     Some(())
+                // });
                 continue;
             }
 
@@ -406,12 +406,12 @@ impl Indexer {
             // });
             // is a dupe
             if gp.contig == DUPE_HIGH_LEVEL {
-                ocw.as_mut().and_then(|mut f| {
-                    write!(&mut f, "\"c{}\",{},\"", gp.contig,i).unwrap();
-                    write!(&mut f, "\"\n", ).unwrap();
-                    // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                    Some(())
-                });
+                // ocw.as_mut().and_then(|mut f| {
+                //     write!(&mut f, "\"c{}\",{},\"", gp.contig,i).unwrap();
+                //     write!(&mut f, "\"\n", ).unwrap();
+                //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                //     Some(())
+                // });
                 // too much keys in this dupe, then skip it
                 continue;
             } else if gp.contig == DUPE_NORMAL_LEVEL {
@@ -425,89 +425,89 @@ impl Indexer {
                         i as i32,
                     ));
 
-                    ocw.as_mut().and_then(|mut f| {
-                        write!(&mut f, "{},{},\"", g,i).unwrap();
-                        write!(&mut f, "gplong={}\"\n", gplong).unwrap();
-                        // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                        Some(())
-                    });
+                    // ocw.as_mut().and_then(|mut f| {
+                    //     write!(&mut f, "{},{},\"", g,i).unwrap();
+                    //     write!(&mut f, "gplong={}\"\n", gplong).unwrap();
+                    //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                    //     Some(())
+                    // });
 
                     if (gplong - gp1).abs() <= 1 {
                         make_mask(mask.as_mut_slice(), MATCH_TOP, seqlen, i, KMER);
-                        ocw.as_mut().and_then(|mut f| {
-                            write!(&mut f, "{},{},\"", g,i).unwrap();
-                            for m in mask.iter() {
-                                write!(&mut f, "{}", m).unwrap();
-                            }
-                            write!(&mut f, "\"\n", ).unwrap();
-                            // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                            Some(())
-                        });
+                        // ocw.as_mut().and_then(|mut f| {
+                        //     write!(&mut f, "{},{},\"", g,i).unwrap();
+                        //     for m in mask.iter() {
+                        //         write!(&mut f, "{}", m).unwrap();
+                        //     }
+                        //     write!(&mut f, "\"\n", ).unwrap();
+                        //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                        //     Some(())
+                        // });
                     } else if (gplong - gp2).abs() <= 1 {
                         make_mask(mask.as_mut_slice(), MATCH_SECOND, seqlen, i, KMER);
-                        ocw.as_mut().and_then(|mut f| {
-                            write!(&mut f, "{},{},\"", g,i).unwrap();
-                            for m in mask.iter() {
-                                write!(&mut f, "{}", m).unwrap();
-                            }
-                            write!(&mut f, "\"\n", ).unwrap();
-                            // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                            Some(())
-                        });
+                        // ocw.as_mut().and_then(|mut f| {
+                        //     write!(&mut f, "{},{},\"", g,i).unwrap();
+                        //     for m in mask.iter() {
+                        //         write!(&mut f, "{}", m).unwrap();
+                        //     }
+                        //     write!(&mut f, "\"\n", ).unwrap();
+                        //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                        //     Some(())
+                        // });
                     } else if (gplong == 0) {
                         make_mask(mask.as_mut_slice(), MATCH_NONE, seqlen, i, KMER);
-                        ocw.as_mut().and_then(|mut f| {
-                            write!(&mut f, "{},{},\"", g,i).unwrap();
-                            for m in mask.iter() {
-                                write!(&mut f, "{}", m).unwrap();
-                            }
-                            write!(&mut f, "\"\n", ).unwrap();
-                            // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                            Some(())
-                        });
+                        // ocw.as_mut().and_then(|mut f| {
+                        //     write!(&mut f, "{},{},\"", g,i).unwrap();
+                        //     for m in mask.iter() {
+                        //         write!(&mut f, "{}", m).unwrap();
+                        //     }
+                        //     write!(&mut f, "\"\n", ).unwrap();
+                        //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                        //     Some(())
+                        // });
                     }
                 }
             } else {
                 let gplong = gp_to_i64(&shift(gp, i as i32));
-                ocw.as_mut().and_then(|mut f| {
-                    write!(&mut f, "{},{},\"", -1,i).unwrap();
-                    write!(&mut f, "gplong={}\"\n", gplong).unwrap();
-                    // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                    Some(())
-                });
+                // ocw.as_mut().and_then(|mut f| {
+                //     write!(&mut f, "{},{},\"", -1,i).unwrap();
+                //     write!(&mut f, "gplong={}\"\n", gplong).unwrap();
+                //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                //     Some(())
+                // });
                 if (gplong - gp1).abs() <= 1 {
                     make_mask(mask.as_mut_slice(), MATCH_TOP, seqlen, i, KMER);
-                    ocw.as_mut().and_then(|mut f| {
-                        write!(&mut f, "-1,{},\"", i).unwrap();
-                        for m in mask.iter() {
-                            write!(&mut f, "{}", m).unwrap();
-                        }
-                        write!(&mut f, "\"\n", ).unwrap();
-                        // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                        Some(())
-                    });
+                    // ocw.as_mut().and_then(|mut f| {
+                    //     write!(&mut f, "-1,{},\"", i).unwrap();
+                    //     for m in mask.iter() {
+                    //         write!(&mut f, "{}", m).unwrap();
+                    //     }
+                    //     write!(&mut f, "\"\n", ).unwrap();
+                    //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                    //     Some(())
+                    // });
                 } else if (gplong - gp2).abs() <= 1 {
                     make_mask(mask.as_mut_slice(), MATCH_SECOND, seqlen, i, KMER);
-                    ocw.as_mut().and_then(|mut f| {
-                        write!(&mut f, "-1,{},\"", i).unwrap();
-                        for m in mask.iter() {
-                            write!(&mut f, "{}", m).unwrap();
-                        }
-                        write!(&mut f, "\"\n", ).unwrap();
-                        // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                        Some(())
-                    });
+                    // ocw.as_mut().and_then(|mut f| {
+                    //     write!(&mut f, "-1,{},\"", i).unwrap();
+                    //     for m in mask.iter() {
+                    //         write!(&mut f, "{}", m).unwrap();
+                    //     }
+                    //     write!(&mut f, "\"\n", ).unwrap();
+                    //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                    //     Some(())
+                    // });
                 } else if gplong == 0 {
                     make_mask(mask.as_mut_slice(), MATCH_NONE, seqlen, i, KMER);
-                    ocw.as_mut().and_then(|mut f| {
-                        write!(&mut f, "-1,{},\"", i).unwrap();
-                        for m in mask.iter() {
-                            write!(&mut f, "{}", m).unwrap();
-                        }
-                        write!(&mut f, "\"\n", ).unwrap();
-                        // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
-                        Some(())
-                    });
+                    // ocw.as_mut().and_then(|mut f| {
+                    //     write!(&mut f, "-1,{},\"", i).unwrap();
+                    //     for m in mask.iter() {
+                    //         write!(&mut f, "{}", m).unwrap();
+                    //     }
+                    //     write!(&mut f, "\"\n", ).unwrap();
+                    //     // write_tsv_row!(&mut f, i, gp.contig, "2nd-pass");
+                    //     Some(())
+                    // });
                 }
             }
         }

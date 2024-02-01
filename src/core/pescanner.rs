@@ -379,9 +379,9 @@ impl PairEndScanner {
             let rcr2;
 
             let merged = pair.fast_merge();
-            if pair.m_left.m_name.contains(DBT) {
-                log::debug!("merged={:#?}", merged);
-            };
+            // if pair.m_left.m_name.contains(DBT) {
+            //     log::debug!("merged={:#?}", merged);
+            // };
 
             let mut mapable = false;
 
@@ -390,9 +390,9 @@ impl PairEndScanner {
             // log::debug!("p={}, merged={:?}", p, merged);
             if let Some(ref m) = merged {
                 let mut match_merged = m_fusion_mapper.map_read(m, &mut mapable, 2, 20)?;
-                if pair.m_left.m_name.contains(DBT) {
-                    log::debug!("match_merged={:#?}", match_merged);
-                };
+                // if pair.m_left.m_name.contains(DBT) {
+                //     log::debug!("match_merged={:#?}", match_merged);
+                // };
 
                 // log::debug!("match_merged={:?}", match_merged);
                 if let Some(mut mm) = match_merged {
@@ -402,9 +402,9 @@ impl PairEndScanner {
                     merged_rc = m.reverse_complement();
                     let mut match_merged_rc =
                         m_fusion_mapper.map_read(&merged_rc, &mut mapable, 2, 20)?;
-                    if pair.m_left.m_name.contains(DBT) {
-                        log::debug!("match_merged_rc={:#?}", match_merged_rc);
-                    };
+                    // if pair.m_left.m_name.contains(DBT) {
+                    //     log::debug!("match_merged_rc={:#?}", match_merged_rc);
+                    // };
                     if let Some(mut mmr) = match_merged_rc {
                         mmr.add_original_pair(pair.clone());
                         self.push_match(mmr);
@@ -415,18 +415,18 @@ impl PairEndScanner {
             // else still search R1 and R2 separatedly
             mapable = false;
             let mut match_r1 = m_fusion_mapper.map_read(r1, &mut mapable, 2, 20)?;
-            if pair.m_left.m_name.contains(DBT) {
-                log::debug!("match_r1={:#?}", match_r1);
-            };
+            // if pair.m_left.m_name.contains(DBT) {
+            //     log::debug!("match_r1={:#?}", match_r1);
+            // };
             if let Some(mut mr1) = match_r1 {
                 mr1.add_original_pair(pair.clone());
                 self.push_match(mr1);
             } else if mapable {
                 rcr1 = r1.reverse_complement();
                 let match_rcr1 = m_fusion_mapper.map_read(&rcr1, &mut mapable, 2, 20)?;
-                if pair.m_left.m_name.contains(DBT) {
-                    log::debug!("match_rcr1={:#?}", match_rcr1);
-                };
+                // if pair.m_left.m_name.contains(DBT) {
+                //     log::debug!("match_rcr1={:#?}", match_rcr1);
+                // };
                 if let Some(mut mrc1) = match_rcr1 {
                     mrc1.add_original_pair(pair.clone());
                     mrc1.set_reversed(true);
@@ -437,18 +437,18 @@ impl PairEndScanner {
             mapable = false;
 
             let match_r2 = m_fusion_mapper.map_read(r2, &mut mapable, 2, 20)?;
-            if pair.m_left.m_name.contains(DBT) {
-                log::debug!("match_r2={:#?}", match_r2);
-            };
+            // if pair.m_left.m_name.contains(DBT) {
+            //     log::debug!("match_r2={:#?}", match_r2);
+            // };
             if let Some(mut mr2) = match_r2 {
                 mr2.add_original_pair(pair.clone());
                 self.push_match(mr2);
             } else if mapable {
                 rcr2 = r2.reverse_complement();
                 let match_rcr2 = m_fusion_mapper.map_read(&rcr2, &mut mapable, 2, 20)?;
-                if pair.m_left.m_name.contains(DBT) {
-                    log::debug!("match_rcr2={:#?}", match_rcr2);
-                };
+                // if pair.m_left.m_name.contains(DBT) {
+                //     log::debug!("match_rcr2={:#?}", match_rcr2);
+                // };
                 if let Some(mut mrc2) = match_rcr2 {
                     mrc2.add_original_pair(pair.clone());
                     mrc2.set_reversed(true);
@@ -460,19 +460,20 @@ impl PairEndScanner {
 
         Ok(true)
     }
-    #[track_caller]
+    // #[track_caller]
     fn push_match(&self, m: ReadMatch) {
         // lock(self.m_fusion_mtx);
-        let loc = Location::caller();
+        
 
-        if m.m_read.m_name.contains(DBT) {
-            log::debug!(
-                "push_match() called from {}:{}:{}",
-                loc.file(),
-                loc.line(),
-                loc.column()
-            );
-        }
+        // if m.m_read.m_name.contains(DBT) {
+            // let loc = Location::caller();
+        //     log::debug!(
+        //         "push_match() called from {}:{}:{}",
+        //         loc.file(),
+        //         loc.line(),
+        //         loc.column()
+        //     );
+        // }
         
 
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);

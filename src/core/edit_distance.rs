@@ -3,12 +3,14 @@ use std::hash::Hash;
 use std::{fmt, iter};
 use std::ops::BitAnd;
 
+use super::matcher::GFHasherBuilder;
+
 fn bp() {
 
 }
 
 fn edit_distance_bpv<T, const N: usize>(
-    cmap: &mut HashMap<T, [u64; N]>,
+    cmap: &mut HashMap<T, [u64; N], GFHasherBuilder>,
     v: &[T],
     vsize: usize,
     tmax: usize,
@@ -98,7 +100,7 @@ fn edit_distance_dp(str1: &str, size1: usize, str2: &str, size2: usize) -> usize
     (0..(size2 + 1)).for_each(|i| *d.get_mut(0).unwrap().get_mut(i).unwrap() = i as u32);
 
     for i in (1..(size1 + 1)) {
-        let (d1, d1p) = d.split_at_mut(i);
+        let (d1p, d1) = d.split_at_mut(i);
         let d1p = d1p.last().unwrap();
         let d1 = d1.first_mut().unwrap();
 
@@ -119,7 +121,7 @@ fn edit_distance_dp(str1: &str, size1: usize, str2: &str, size2: usize) -> usize
 
 type VARR<const N: usize> = [u64; N];
 fn edit_distance_map_<const N: usize>(a: &str, asize: usize, b: &str, bsize: usize) -> usize {
-    let mut cmap: HashMap<char, VARR<N>> = HashMap::new();
+    let mut cmap: HashMap<char, VARR<N>, GFHasherBuilder> = HashMap::with_hasher(GFHasherBuilder::default());
     let tmax = (asize - 1).wrapping_shr(6);
     let tlen = asize - tmax * 64;
 

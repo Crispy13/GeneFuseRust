@@ -377,6 +377,7 @@ impl<'f> Matcher<'f> {
     fn map_to_index(&mut self, sequence: &Sequence) -> Option<MatchResult> {
         let mut kmer_stat: HashMap<i64, i32, GFHasherBuilder> =
             HashMap::with_hasher(GFHasherBuilder::new());
+
         kmer_stat.insert(0, 0);
 
         let seq = sequence.m_str.as_str();
