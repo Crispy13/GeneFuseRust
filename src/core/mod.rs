@@ -16,3 +16,4 @@ pub(crate) mod read;
 pub(crate) mod read_match;
 pub(crate) mod sequence;
 pub(crate) mod pescanner;
+pub(crate) mod sescanner;

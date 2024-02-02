@@ -25,7 +25,6 @@ use crate::{
 };
 use crossbeam::queue::ArrayQueue;
 
-
 pub const DBT: &'static str = "@NB551106:59:HTFV3BGX2:4:22605:18628:10037";
 
 #[derive(Debug)]
@@ -34,17 +33,17 @@ struct ReadPairPack {
     count: i32,
 }
 
-struct CPPConditionVariable {}
+// struct CPPConditionVariable {}
 
 struct ReadPairRepository {
     pack_buffer: ArrayQueue<ReadPairPack>,
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     read_counter: AtomicUsize,
-    mtx: CPPMutex,
-    read_counter_mtx: CPPMutex,
-    repo_not_full: Condvar,
-    repo_not_empty: Condvar,
+    // mtx: CPPMutex,
+    // read_counter_mtx: CPPMutex,
+    // repo_not_full: Condvar,
+    // repo_not_empty: Condvar,
 }
 
 pub(crate) struct PairEndScanner {
@@ -56,7 +55,6 @@ pub(crate) struct PairEndScanner {
     m_json_file: String,
     m_repo_o: Option<ReadPairRepository>,
     m_produce_finished: AtomicBool,
-    m_fusion_mtx: CPPMutex,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper>,
 }
@@ -80,7 +78,6 @@ impl PairEndScanner {
             m_json_file: json,
             m_repo_o: None,
             m_produce_finished: AtomicBool::new(false),
-            m_fusion_mtx: CPPMutex {},
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
             // repo_not_full: Condvar::new(),
@@ -123,10 +120,10 @@ impl PairEndScanner {
                 read_pos: read_pos,
                 write_pos: write_pos,
                 read_counter: read_counter,
-                mtx: CPPMutex {},
-                read_counter_mtx: CPPMutex {},
-                repo_not_full: Condvar::new(),
-                repo_not_empty: Condvar::new(),
+                // mtx: CPPMutex {},
+                // read_counter_mtx: CPPMutex {},
+                // repo_not_full: Condvar::new(),
+                // repo_not_empty: Condvar::new(),
             };
 
             self.m_repo_o = Some(repo);
@@ -157,9 +154,12 @@ impl PairEndScanner {
         m_repo.write_pos.fetch_add(1, Ordering::Relaxed);
         log::debug!("Add 1 to write_pos.");
 
-        if m_repo.write_pos.load(Ordering::Relaxed) == PACK_NUM_LIMIT as usize {
-            m_repo.write_pos.store(0, Ordering::Relaxed);
-        }
+        let _ = m_repo.write_pos.compare_exchange(
+            PACK_NUM_LIMIT as usize,
+            0,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ); // ignore error because in this method, occured error means just the atomic value is not the same as `current`.
 
         // mRepo.repoNotEmpty.notify_all();
         // lock.unlock();
@@ -366,7 +366,6 @@ impl PairEndScanner {
         Ok(())
     }
 
-    
     fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Box<dyn Error>> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
@@ -414,7 +413,7 @@ impl PairEndScanner {
             }
             // else still search R1 and R2 separatedly
             mapable = false;
-            let mut match_r1 = m_fusion_mapper.map_read(r1, &mut mapable, 2, 20)?;
+            let match_r1 = m_fusion_mapper.map_read(r1, &mut mapable, 2, 20)?;
             // if pair.m_left.m_name.contains(DBT) {
             //     log::debug!("match_r1={:#?}", match_r1);
             // };
@@ -455,7 +454,6 @@ impl PairEndScanner {
                     self.push_match(mrc2);
                 }
             }
-            
         }
 
         Ok(true)
@@ -463,10 +461,9 @@ impl PairEndScanner {
     // #[track_caller]
     fn push_match(&self, m: ReadMatch) {
         // lock(self.m_fusion_mtx);
-        
 
         // if m.m_read.m_name.contains(DBT) {
-            // let loc = Location::caller();
+        // let loc = Location::caller();
         //     log::debug!(
         //         "push_match() called from {}:{}:{}",
         //         loc.file(),
@@ -474,7 +471,6 @@ impl PairEndScanner {
         //         loc.column()
         //     );
         // }
-        
 
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
         // lock.unlock();

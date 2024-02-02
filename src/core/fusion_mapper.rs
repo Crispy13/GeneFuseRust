@@ -515,7 +515,7 @@ impl FusionMapper {
 
     fn sort_fusion_results(&mut self) {
         self.m_fusion_results
-            .sort_by(|a, b| Self::more_reads(a, b).unwrap())
+            .sort_by(|a, b| Self::more_reads(b, a).unwrap()) // b,a instead of a,b because we want descending order.
     }
 
     fn more_reads(r1: &FusionResult, r2: &FusionResult) -> Option<Ordering> {
@@ -558,5 +558,17 @@ mod test {
         const BLOOM_FILTER_SIZE: usize = (1_i32.wrapping_shl(20)) as usize;
 
         let c = [0_u8; BLOOM_FILTER_SIZE];
+    }
+    #[test]
+    fn pcmp() {
+        println!("{:?}", 1_i32.partial_cmp(&2).unwrap());
+
+        let mut a = [5, 4,1,2,3];
+        a.sort_by(|a,b| {
+            let r = a.partial_cmp(b).unwrap();
+            println!("{:?}, a={}, b={}", r, a,b);
+            r
+        });
+        println!("a={:?}", a);
     }
 }
