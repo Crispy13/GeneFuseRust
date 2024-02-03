@@ -2,11 +2,6 @@
 This program is a Rust porting version based on [**GeneFuse 0.8.0**](https://github.com/OpenGene/GeneFuse) (original language: C++)
 
 
-## How to use
-- Decompress **genefuse.gz** in [release](https://github.com/Crispy13/GeneFuseRust/releases) and run.  
-  
-It was compiled and tested on WSL2 Ubuntu.
-
 ## Build from source
 1. If you don't have Rust, [**install it**](https://www.rust-lang.org/learn/get-started).  
 2. Build it with the below command on the root dir of this repo:
