@@ -1,4 +1,4 @@
-# GeneFuse vRust v0.1.0
+# GeneFuse vRust
 This program is a Rust porting version based on [**GeneFuse 0.8.0**](https://github.com/OpenGene/GeneFuse) (original language: C++)
 
 
