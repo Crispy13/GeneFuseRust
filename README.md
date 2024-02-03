@@ -41,7 +41,7 @@ In a tiny test which ran genefuse 10 times with the above options,
 This version's speed was about **4.5x faster** on my machine. \[Rust:159s, Original:709s\] (WSL2 Ubuntu, Ryzen 5800x).
 
 
-#### For more information about this program, please see [**the original repository**]((https://github.com/OpenGene/GeneFuse)).
+\- For more information about this program, please see [**the original repository**]((https://github.com/OpenGene/GeneFuse)).
 
 
 
