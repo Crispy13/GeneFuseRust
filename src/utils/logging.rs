@@ -21,7 +21,7 @@ pub(crate) fn init_logger() -> log4rs::Handle {
         .unwrap();
 
     let config = Config::builder()
-        .appender(Appender::builder().build("file", Box::new(file_appender)))
+        // .appender(Appender::builder().build("file", Box::new(file_appender)))
         .appender(Appender::builder().build("stderr", Box::new(stderr)))
         // .logger(Logger::builder().build("app::backend::db", LevelFilter::Info))
         // .logger(Logger::builder()
@@ -30,7 +30,7 @@ pub(crate) fn init_logger() -> log4rs::Handle {
         //     .build("app::requests", LevelFilter::Info))
         .build(
             Root::builder()
-                .appender("file")
+                // .appender("file")
                 .appender("stderr")
                 .build(LevelFilter::Info),
         )
