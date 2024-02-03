@@ -21,6 +21,7 @@ target/release/genefuse
 ```
 
 ## Notes: Some modifications in this version.
+- Added read name as a criteria to sort `Match` objects. (The original codes can yield different unique read count per run.)
 - It can accept **a file having a list of fusion csvs**. If you give it a file like that instead of a single csv, it outputs report files per fusion csv file.
 - Parallelized part of `matcher::makeIndex()` method to increase performance.
 - Some multi-threading codes were modified to be used in Rust.
