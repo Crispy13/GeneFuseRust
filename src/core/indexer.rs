@@ -103,6 +103,20 @@ impl Indexer {
         })
     }
 
+    pub(crate) fn with_loaded_ref(m_reference: FastaReader, fusions: Vec<Fusion>) -> Self {
+        Self {
+            m_ref_file: m_reference.m_fasta_file.clone(),
+            m_reference: Some(m_reference),
+            m_fusions: fusions,
+            m_unique_pos: 0,
+            m_dupe_pos: 0,
+            m_kmer_pos: HashMap::with_hasher(GFHasherBuilder::default()),
+            m_bloom_filter: vec![0; BLOOM_FILTER_SIZE].into_boxed_slice(),
+            m_dupe_list: Vec::new(),
+            m_fusion_seq: Vec::new(),
+        }
+    }
+
     pub(crate) fn get_ref(&self) -> Option<&FastaReader> {
         self.m_reference.as_ref()
     }
@@ -119,6 +133,8 @@ impl Indexer {
         log::debug!("Index iter len={}", self.m_fusions.len());
         let pbar = prepare_pbar(self.m_fusions.len() as u64);
         pbar.set_message("making index...");
+
+        //mutables : fusion seq
         for ctg in (0..self.m_fusions.len()).map(|e| {
             pbar.inc(1);
             e
@@ -141,14 +157,12 @@ impl Indexer {
                 }
             }
 
-            let mut s = seq_ref
+            let s = seq_ref
                 .get(&chr)
                 .unwrap()
-                .chars()
-                .skip(gene.m_start as usize)
-                .take((gene.m_end - gene.m_start) as usize)
-                .collect::<String>();
-            s = s.to_uppercase();
+                .get((gene.m_start as usize)..(gene.m_end as usize))
+                .unwrap()
+                .to_uppercase();
 
             log::debug!("Indexing contig forward...",);
             //index forward
@@ -157,7 +171,7 @@ impl Indexer {
             log::debug!("Indexing contig reverse...",);
             //index reverse complement
             let rev_comp_seq = reverse_complement(&s);
-            self.index_contig(ctg, &rev_comp_seq, 1 - (s.chars().count() as i32));
+            self.index_contig(ctg, &rev_comp_seq, 1 - (s.len() as i32));
 
             self.m_fusion_seq.push(s);
         }
@@ -171,14 +185,14 @@ impl Indexer {
     fn index_contig(&mut self, ctg: usize, seq: &str, start: i32) {
         let mut kmer = -1_i64;
 
-        let seq_cv = seq.chars().collect::<Vec<char>>();
+        // let seq_cv = seq.chars().collect::<Vec<char>>();
 
         log::debug!(
             "Index contig={ctg}, start={start}, seq_char_len={}",
-            seq_cv.len()
+            seq.len()
         );
-        for i in (0..(seq_cv.len() as i32 - KMER)) {
-            kmer = make_kmer_cv(&seq_cv, i, kmer, 1);
+        for i in (0..(seq.len() as i32 - KMER)) {
+            kmer = make_kmer_bytes(seq, i, kmer, 1);
             if kmer < 0 {
                 continue;
             }
@@ -384,7 +398,7 @@ impl Indexer {
             //     log::debug!("i={}, bloom_filter_pos={}, bit={}", i, self.m_bloom_filter.get(pos as usize).unwrap(), 0x1_u8.wrapping_shl(bit as u32));
             //     Some(())
             // });
-            
+
             if self.m_bloom_filter.get(pos as usize).unwrap()
                 & (0x1_u8.wrapping_shl(bit as u32) as u8)
                 == 0
@@ -841,6 +855,69 @@ fn make_kmer_cv(seq: &[char], pos: i32, last_kmer: i64, step: i32) -> i64 {
     kmer
 }
 
+fn make_kmer_bytes(seq: &str, pos: i32, last_kmer: i64, step: i32) -> i64 {
+    // else calculate it completely
+    let mut kmer = 0;
+
+    let mut start = 0;
+
+    // re-use several bits
+    if last_kmer >= 0 {
+        kmer = last_kmer;
+        start = KMER - step;
+
+        if step == 1 {
+            kmer = (kmer & 0x3FFFFFFF).wrapping_shl(2);
+        } else if step == 2 {
+            kmer = (kmer & 0x0FFFFFFF).wrapping_shl(2);
+        } else if step == 3 {
+            kmer = (kmer & 0x03FFFFFF).wrapping_shl(2);
+        } else if step == 4 {
+            kmer = (kmer & 0x00FFFFFF).wrapping_shl(2);
+        }
+    }
+    let subseq = seq
+        .get(((pos + start) as usize)..((pos + KMER) as usize))
+        .unwrap_or_else(|| {
+            panic!(
+                "seq_cv_len={}, pos={}, s={}, e={}",
+                seq.len(),
+                pos,
+                pos + start,
+                pos + KMER
+            )
+        });
+
+    // log::debug!("subseq.len() = {}", subseq.len());
+    // log::debug!("pos={}, start={}, KMER = {}", pos, start, KMER);
+    for (base, i) in subseq.as_bytes().iter().zip(start..KMER) {
+        match base {
+            b'A' => {
+                kmer += 0;
+            }
+            b'T' => {
+                kmer += 1;
+            }
+            b'C' => {
+                kmer += 2;
+            }
+            b'G' => {
+                kmer += 3;
+            }
+            _ => {
+                return -1;
+            }
+        }
+
+        // not the tail
+        if (i < KMER - 1) {
+            kmer = kmer << 2;
+        }
+    }
+
+    kmer
+}
+
 #[inline(always)]
 fn check_map_has_key_then_get_back<K, V>(map: &BTreeMap<K, V>, key: K) -> Option<K>
 where
@@ -1014,4 +1091,3 @@ mod test {
         println!("{}", 96 & 64 as u8 == 0);
     }
 }
-

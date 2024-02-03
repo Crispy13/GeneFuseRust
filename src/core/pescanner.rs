@@ -14,6 +14,7 @@ use std::{
 
 use super::{
     common::{PACK_NUM_LIMIT, PACK_SIZE},
+    fasta_reader::{self, FastaReader},
     fastq_reader::FastqReaderPair,
     fusion_mapper::FusionMapper,
     read::SequenceReadPair,
@@ -145,21 +146,22 @@ impl PairEndScanner {
             match m_repo.pack_buffer.push(pack) {
                 Ok(_) => break,
                 Err(p) => {
+                    // means the buffer is full.
                     pack = p;
                 }
             }
         }
 
         // *self.m_repo_mut().pack_buffer.get_mut(wp).unwrap() = pack;
-        m_repo.write_pos.fetch_add(1, Ordering::Relaxed);
-        log::debug!("Add 1 to write_pos.");
+        // m_repo.write_pos.fetch_add(1, Ordering::Relaxed);
+        // log::debug!("Add 1 to write_pos.");
 
-        let _ = m_repo.write_pos.compare_exchange(
-            PACK_NUM_LIMIT as usize,
-            0,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ); // ignore error because in this method, occured error means just the atomic value is not the same as `current`.
+        // let _ = m_repo.write_pos.compare_exchange(
+        //     PACK_NUM_LIMIT as usize,
+        //     0,
+        //     Ordering::Relaxed,
+        //     Ordering::Relaxed,
+        // ); // ignore error because in this method, occured error means just the atomic value is not the same as `current`.
 
         // mRepo.repoNotEmpty.notify_all();
         // lock.unlock();
@@ -197,14 +199,12 @@ impl PairEndScanner {
 
                 // reset count to 0
                 count = 0;
-                // if the consumer is far behind this producer, sleep and wait to limit memory usage
-                while self.m_repo().write_pos.load(Ordering::Relaxed) as i32
-                    - (self.m_repo().read_pos.load(Ordering::Relaxed) as i32)
-                    > PACK_NUM_LIMIT
-                {
-                    slept += 1;
-                    sleep(Duration::from_micros(1000));
-                }
+                // if pack_buffer is full, sleep a while.
+                // while self.m_repo_o.as_ref().unwrap().pack_buffer.is_full()
+                // {
+                //     slept += 1;
+                //     sleep(Duration::from_micros(1000));
+                // }
             }
         }
 
@@ -216,7 +216,41 @@ impl PairEndScanner {
         self.m_produce_finished.store(true, Ordering::Relaxed);
         // lock.unlock();
 
+        // producing tasks has been done, from now try to consume the tasks.
+        if rayon::current_num_threads() > 1 {
+            while !self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {
+                self.consume_pack()?;
+            }
+        }
+        
+
         Ok(())
+    }
+
+    pub(crate) fn drop_and_get_back_fasta_reader(self) -> FastaReader {
+        self.m_fusion_mapper_o.unwrap().m_indexer.m_reference.unwrap()
+    }
+
+    pub(crate) fn scan_per_fusion_csv(
+        &mut self,
+        fasta_reader: FastaReader,
+    ) -> Result<bool, Box<dyn Error>> {
+        log::debug!("Entered into scan.");
+        self.m_fusion_mapper_o = Some(FusionMapper::from_fasta_reader_and_fusion_files(
+            fasta_reader,
+            &self.m_fusion_file,
+        )?);
+        log::debug!("Made fusion mapper.");
+
+        self.init_pack_repository();
+
+        // log::debug!("fusion_list={:#?}", self.m_fusion_mapper_o.as_ref().unwrap().fusion_list);
+
+        // for (k,v) in self.m_fusion_mapper_o.as_ref().unwrap().m_indexer.m_reference.as_ref().unwrap().m_all_contigs.iter() {
+        //     log::debug!("contig={}, seq_len={}, seq_5_from_start={}, seq_last_5_to_end={}", k, v.len(), v.get(..5).unwrap(), v.get((v.len()-5)..).unwrap())
+        // }
+
+        Ok(self._scan()?)
     }
 
     pub(crate) fn scan(&mut self) -> Result<bool, Box<dyn Error>> {
@@ -235,12 +269,10 @@ impl PairEndScanner {
         //     log::debug!("contig={}, seq_len={}, seq_5_from_start={}, seq_last_5_to_end={}", k, v.len(), v.get(..5).unwrap(), v.get((v.len()-5)..).unwrap())
         // }
 
-        ThreadPoolBuilder::new()
-            .num_threads(self.m_thread_num as usize)
-            .thread_name(|i| format!("MainThreadPool-{i}"))
-            .build_global()
-            .unwrap();
+        Ok(self._scan()?)
+    }
 
+    fn _scan(&mut self) -> Result<bool, Box<dyn Error>> {
         rayon::scope(|tps| {
             tps.spawn(|tps| self.producer_task().unwrap());
 
@@ -293,8 +325,7 @@ impl PairEndScanner {
         loop {
             // lock = self.m_repo().read_counter_mtx;
             if self.m_produce_finished.load(Ordering::Relaxed)
-                && self.m_repo().write_pos.load(Ordering::Relaxed)
-                    == self.m_repo().read_pos.load(Ordering::Relaxed)
+                && self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty()
             {
                 // lock.unlock();
                 break;
@@ -352,12 +383,12 @@ impl PairEndScanner {
 
         // let data = self.m_repo_o.as_ref().unwrap().pack_buffer.pop().unwrap();
 
-        self.m_repo().read_pos.fetch_add(1, Ordering::Relaxed);
-        log::debug!("Add 1 to read_pos.");
+        // self.m_repo().read_pos.fetch_add(1, Ordering::Relaxed);
+        // log::debug!("Add 1 to read_pos.");
 
-        if self.m_repo().read_pos.load(Ordering::Relaxed) as i32 >= PACK_NUM_LIMIT {
-            self.m_repo().read_pos.store(0, Ordering::Relaxed);
-        }
+        // if self.m_repo().read_pos.load(Ordering::Relaxed) as i32 >= PACK_NUM_LIMIT {
+        //     self.m_repo().read_pos.store(0, Ordering::Relaxed);
+        // }
 
         // lock.unlock();
         // mRepo.repoNotFull.notify_all();

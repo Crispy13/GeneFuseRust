@@ -9,7 +9,7 @@ use std::{
 };
 
 use genefuse::aux::int_hasher::{CPPTrivialHasherBuilder, FxHasherBuilder};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 
 use super::{common::GenePos, fasta_reader::FastaReader, sequence::Sequence};
 
@@ -127,11 +127,11 @@ impl<'f> Matcher<'f> {
         let m_contig_names = Mutex::new(mem::take(&mut self.m_contig_names));
         let m_kmer_positions = Mutex::new(mem::take(&mut self.m_kmer_positions));
 
-        let ctg = AtomicI32::new(0);
+        // let ctg = AtomicI32::new(0);
 
         log::debug!("indexing contig per ctg_name...");
         // let mut seq_cv= Vec::new();
-        contig_ref.par_iter().for_each(|e| {
+        contig_ref.iter().enumerate().par_bridge().for_each(|(ctg, e)| {
             let (ctg_name, s) = (e.0.as_str(), e.1.as_str());
             let seq_cv = s
                 .as_bytes()
@@ -143,10 +143,10 @@ impl<'f> Matcher<'f> {
             m_contig_names.lock().unwrap().push(ctg_name.to_owned());
 
             //index forward
-            self.index_contig_bytes(ctg.load(Ordering::Relaxed), &seq_cv, 0, &m_kmer_positions);
+            self.index_contig_bytes(ctg as i32, &seq_cv, 0, &m_kmer_positions);
 
             //index reverse complement
-            ctg.fetch_add(1, Ordering::Relaxed);
+            // ctg.fetch_add(1, Ordering::Relaxed);
             // seq_cv.clear();
         });
 

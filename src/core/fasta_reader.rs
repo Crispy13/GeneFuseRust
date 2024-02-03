@@ -2,23 +2,28 @@ use std::panic::Location;
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
+    fmt,
     fs::File,
-    io::{BufRead, BufReader, Read, self},
+    io::{self, BufRead, BufReader, Read},
     mem,
     path::Path,
-    fmt,
 };
 
 use flate2::read::MultiGzDecoder;
 
-use crate::aux::he::{make_custom_error, make_custom_error3, make_custom_error4, ErrorExplained, OrExaplain};
+use crate::aux::he::{
+    make_custom_error, make_custom_error3, make_custom_error4, ErrorExplained, OrExaplain,
+};
+use crate::aux::limited_bufreader::LimitedBufReader;
 use crate::aux::pbar::prepare_pbar;
 
 make_custom_error4!(EmptyFileError, "Loaded file is empty.");
 
 pub(crate) struct FastaReader {
-    m_fasta_file: String,
-    m_fasta_file_stream: BufReader<MultiGzDecoder<File>>,
+    pub(crate) m_fasta_file: String,
+    // m_fasta_file_stream: BufReader<MultiGzDecoder<File>>,
+    m_fasta_gz_reader: Option<BufReader<MultiGzDecoder<File>>>,
+    m_fasta_txt_reader: Option<BufReader<File>>,
     m_force_upper_case: bool,
 
     read_buf: Vec<u8>,
@@ -30,7 +35,10 @@ pub(crate) struct FastaReader {
 }
 
 impl FastaReader {
-    pub(crate) fn new(fasta_file: impl AsRef<Path>, force_upper_case: bool) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn new(
+        fasta_file: impl AsRef<Path>,
+        force_upper_case: bool,
+    ) -> Result<Self, Box<dyn Error>> {
         let fasta_file = fasta_file.as_ref();
 
         if fasta_file.is_dir() {
@@ -41,7 +49,23 @@ impl FastaReader {
             ))?
         }
 
-        let mut fasta_buf_reader = BufReader::new(MultiGzDecoder::new(File::open(&fasta_file)?));
+        // const max_take:u64 = 10000000;
+        let (mut gz_reader, mut txt_reader) = (None, None);
+        // load fasta
+        let fasta_buf_reader: &mut dyn BufRead = if fasta_file.extension().unwrap() == "gz" {
+            // gzipped fasta
+            gz_reader = Some(BufReader::new(MultiGzDecoder::new(File::open(
+                &fasta_file,
+            )?)));
+
+            gz_reader.as_mut().unwrap()
+        } else {
+            // text fasta
+            txt_reader = Some(BufReader::new(File::open(&fasta_file)?));
+            txt_reader.as_mut().unwrap()
+        };
+
+        // let mut fasta_buf_reader = BufReader::new(MultiGzDecoder::new(File::open(&fasta_file)?));
 
         // TODO:verify that the file can be read
 
@@ -57,10 +81,11 @@ impl FastaReader {
         }
 
         read_buf.clear();
-        
+
         Ok(Self {
             m_fasta_file: fasta_file.to_str().unwrap().to_string(),
-            m_fasta_file_stream: fasta_buf_reader,
+            m_fasta_gz_reader: gz_reader,
+            m_fasta_txt_reader: txt_reader,
             m_force_upper_case: force_upper_case,
             m_current_sequence: String::new(),
             m_current_id: String::new(),
@@ -69,6 +94,14 @@ impl FastaReader {
 
             read_buf: read_buf,
         })
+    }
+
+    fn m_fasta_file_stream(&mut self) -> &mut dyn BufRead {
+        if let Some(gzr) = self.m_fasta_gz_reader.as_mut() {
+            gzr
+        } else {
+            self.m_fasta_txt_reader.as_mut().unwrap()
+        }
     }
 
     fn current_id(&self) -> &str {
@@ -94,14 +127,19 @@ impl FastaReader {
         let mut found_header = false;
         let m_force_upper_case = &mut self.m_force_upper_case;
 
+        let fasta_buf_reader: &mut dyn BufRead = if self.m_fasta_gz_reader.is_some() {
+            self.m_fasta_gz_reader.as_mut().unwrap()
+        } else {
+            self.m_fasta_txt_reader.as_mut().unwrap()
+        };
+
         let mut ss_header = String::new();
         let mut ss_seq = String::new();
 
         let mut has_read_somethings = false;
         // read_buf.clear();
         // read_buf.push(b'>'); // we stopped at first '>' in `new()`. so add it to the front first.
-        if let Ok(true) = self
-            .m_fasta_file_stream
+        if let Ok(true) = fasta_buf_reader
             .read_until(b'>', read_buf)
             .and_then(|rl| Ok(rl > 0))
         {
@@ -115,7 +153,6 @@ impl FastaReader {
 
             has_read_somethings = true;
             let mut read_buf_drained = read_buf.drain(..);
-
 
             while let Some((true, b)) = read_buf_drained
                 .next()
@@ -141,7 +178,6 @@ impl FastaReader {
                     }
                 }))
             }
-
         }
 
         // log::debug!("read header = {}, current_seq = {} ..", ss_header, ss_seq.chars().take(20).collect::<String>());
@@ -166,8 +202,6 @@ impl FastaReader {
         pbar.finish_and_clear();
     }
 }
-
-
 
 #[inline]
 fn filter_map_valid_seq_to_upper(mut b: u8) -> Option<char> {
@@ -236,11 +270,9 @@ mod test {
         let mut reader = FastaReader::new("testdata/tinyref.fa.gz", true).unwrap();
 
         let mut s = String::new();
-        reader.m_fasta_file_stream.read_to_string(&mut s).unwrap();
+        reader.m_fasta_file_stream().read_to_string(&mut s).unwrap();
 
         println!("s={s:#}");
-
-
     }
 
     #[test]

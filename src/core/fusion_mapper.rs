@@ -64,6 +64,34 @@ impl FusionMapper {
         })
     }
 
+    pub(crate) fn from_fasta_reader_and_fusion_files(
+        fasta_reader:FastaReader,
+        fusion_file: &str,
+    ) -> Result<Self, Box<dyn Error>> {
+        let fusion_list = Fusion::parse_csv(fusion_file)?;
+        log::debug!("Parsed csv.");
+
+        // log::debug!("fusion_list={:#?}", fusion_list);
+
+        let mut m_indexer = Indexer::with_loaded_ref(fasta_reader, fusion_list.clone());
+        m_indexer.make_index();
+        log::debug!("Made index.");
+
+        // init()
+        let m_fusion_match_size = fusion_list.len().pow(2);
+
+        let fusion_matches = Mutex::new(vec![vec![]; m_fusion_match_size]);
+
+        Ok(Self {
+            m_ref_file: m_indexer.m_reference.as_ref().unwrap().m_fasta_file.clone(),
+            m_fusion_match_size: m_fusion_match_size as i32,
+            m_indexer,
+            fusion_list,
+            fusion_matches,
+            m_fusion_results: Vec::new(),
+        })
+    }
+
     /// ## Defaults:
     /// - distance_req = 2
     ///

@@ -22,12 +22,12 @@ pub(crate) struct FastqReader {
     m_has_quality: bool,
 }
 
+pub(crate) const max_take: u64 = 1000;
+
 impl FastqReader
 // where
 //     R: BufRead,
 {
-    const max_take: u64 = 1000;
-
     pub(crate) fn new(
         file_name: impl AsRef<Path>,
         has_quality: bool,
@@ -40,13 +40,13 @@ impl FastqReader
             m_zipped = true;
             gzr = Some(LimitedBufReader::new(
                 BufReader::new(MultiGzDecoder::new(File::open(file_name)?)),
-                Self::max_take,
+                max_take,
             ));
         } else if Self::is_fastq(file_name) {
             m_zipped = false;
             nr = Some(LimitedBufReader::new(
                 BufReader::new(File::open(file_name)?),
-                Self::max_take,
+                max_take,
             ));
         } else {
             eprintln!("ERROR: the input file should be fastq (.fq, .fastq) or gzipped fastq (.fq.gz, .fastq.gz) {}", file_name.to_str().unwrap());
