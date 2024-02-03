@@ -18,15 +18,15 @@ The command will make a binary in {repo_root}/target/release/genefuse
 target/release/genefuse
 ```
 
-
-## Some Modifications to the original
+## Notes: Some modifications in this version.
 - It can accept **a file having a list of fusion csvs**. If you give it a file like that instead of a single csv, it outputs report files per fusion csv file.
 - Parallelized part of `matcher::makeIndex()` method to increase performance.
 - Some multi-threading codes were modified to be used in Rust.
 
 ## Performance test
 ```
-hg38.fa \
+genefuse \
+    -r hg38.fa \
     -f genes/druggable.hg38.csv \
     -1 genefuse.R1.fq \
     -2 genefuse.R2.fq \
@@ -34,11 +34,11 @@ hg38.fa \
     -j report.json \
     -t 4
 ```
-In a tiny test which ran genefuse 10 times with the above options,
-This version's speed was about 4.5x faster on my machine. \[Rust:159s, Original:709s\] (WSL2 Ubuntu, Ryzen 5800x).
+In a tiny test which ran genefuse 10 times with the above options,  
+This version's speed was about **4.5x faster** on my machine. \[Rust:159s, Original:709s\] (WSL2 Ubuntu, Ryzen 5800x).
 
 
-
+#### For more information about this program, please see [**the original repository**]((https://github.com/OpenGene/GeneFuse)).
 
 
 
