@@ -14,11 +14,11 @@ pub(crate) fn init_logger() -> log4rs::Handle {
         )))
         .build();
 
-    let file_appender = FileAppender::builder()
-        .encoder(pattern_encoder)
-        .append(false)
-        .build("debug.log")
-        .unwrap();
+    // let file_appender = FileAppender::builder()
+    //     .encoder(pattern_encoder)
+    //     .append(false)
+    //     .build("debug.log")
+    //     .unwrap();
 
     let config = Config::builder()
         // .appender(Appender::builder().build("file", Box::new(file_appender)))

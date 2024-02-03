@@ -23,3 +23,5 @@ plot1.png
 *.json
 hg38_fusion_csv_list.txt
 hg19_fusion_csv_list.txt
+genefuse.gz
+genefuse
