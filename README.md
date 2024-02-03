@@ -2,7 +2,7 @@
 This program is a Rust porting version based on [**GeneFuse 0.8.0**](https://github.com/OpenGene/GeneFuse) (original language: C++)
 
 
-## Build from source
+## How to use: Build from source
 1. If you don't have Rust, [**install it**](https://www.rust-lang.org/learn/get-started).  
 2. Build it with the below command on the root dir of this repo:
 ```
