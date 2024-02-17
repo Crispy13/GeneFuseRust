@@ -4,15 +4,12 @@ use std::{
     io::{BufRead, BufReader},
     marker::PhantomData,
     mem,
-    path::Path,
+    path::{Path, PathBuf},
     process::exit,
     sync::Arc,
 };
 
-use rayon::{
-    prelude::*,
-    ThreadPoolBuilder,
-};
+use rayon::{prelude::*, ThreadPoolBuilder};
 
 use crate::{
     aux::limited_bufreader::LimitedBufReader,
@@ -74,7 +71,10 @@ impl FusionScan {
         let (outer_thread_num, inner_thread_num) = if fusion_csv_paths.len() >= self.m_thread_num {
             (self.m_thread_num, 1_usize)
         } else {
-            (fusion_csv_paths.len(), self.m_thread_num / fusion_csv_paths.len())
+            (
+                fusion_csv_paths.len(),
+                self.m_thread_num / fusion_csv_paths.len(),
+            )
         };
 
         let tp = ThreadPoolBuilder::new()
@@ -127,31 +127,31 @@ impl FusionScan {
     ) -> (Vec<String>, Vec<String>) {
         let hf = self.m_html_file.as_str();
 
-        let (hf_stem, hf_ext) = if !hf.is_empty() {
+        let (hf_parent, hf_stem, hf_ext) = if !hf.is_empty() {
             let hf = Path::new(hf);
-            let (hf_stem, hf_ext) = (
+            let (hf_parent, hf_stem, hf_ext) = (
+                hf.parent().unwrap().to_str().unwrap(),
                 hf.file_stem().unwrap().to_str().unwrap(),
                 hf.extension().unwrap().to_str().unwrap(),
             );
-            (hf_stem, hf_ext)
+            (hf_parent, hf_stem, hf_ext)
         } else {
-            ("", "")
+            ("", "", "")
         };
 
         let jf = self.m_json_file.as_str();
 
-        let (jf_stem, jf_ext) = if !jf.is_empty() {
+        let (jf_parent, jf_stem, jf_ext) = if !jf.is_empty() {
             let jf = Path::new(jf);
-            let (jf_stem, jf_ext) = (
+            let (jf_parent, jf_stem, jf_ext) = (
+                jf.parent().unwrap().to_str().unwrap(),
                 jf.file_stem().unwrap().to_str().unwrap(),
                 jf.extension().unwrap().to_str().unwrap(),
             );
-            (jf_stem, jf_ext)
+            (jf_parent, jf_stem, jf_ext)
         } else {
-            ("", "")
+            ("", "", "")
         };
-
-        let json_file = self.m_json_file.as_str();
 
         let mut html_file_vec = Vec::new();
         let mut json_file_vec = Vec::new();
@@ -159,11 +159,25 @@ impl FusionScan {
         fusion_csv_paths.iter().for_each(|fc| {
             let fc_stem = Path::new(fc).file_stem().unwrap().to_str().unwrap();
             if !hf.is_empty() {
-                html_file_vec.push(format!("{}_{}.{}", hf_stem, fc_stem, hf_ext));
+                html_file_vec.push(
+                    [hf_parent, &format!("{}_{}.{}", hf_stem, fc_stem, hf_ext)]
+                        .iter()
+                        .collect::<PathBuf>()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap(),
+                );
             }
 
             if !jf.is_empty() {
-                json_file_vec.push(format!("{}_{}.{}", jf_stem, fc_stem, jf_ext));
+                json_file_vec.push(
+                    [jf_parent, &format!("{}_{}.{}", jf_stem, fc_stem, jf_ext)]
+                        .iter()
+                        .collect::<PathBuf>()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap(),
+                );
             }
         });
 
