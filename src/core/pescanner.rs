@@ -41,7 +41,7 @@ struct ReadPairRepository {
     // repo_not_empty: Condvar,
 }
 
-pub(crate) struct PairEndScanner {
+pub(crate) struct PairEndScanner<'s> {
     m_fusion_file: String,
     m_ref_file: String,
     m_read1_file: String,
@@ -51,11 +51,11 @@ pub(crate) struct PairEndScanner {
     m_repo_o: Option<ReadPairRepository>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
-    m_fusion_mapper_o: Option<FusionMapper>,
+    m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
 }
 
-impl PairEndScanner {
+impl<'s> PairEndScanner<'s> {
     pub(crate) fn new(
         fusion_file: String,
         ref_file: String,
@@ -424,7 +424,7 @@ impl PairEndScanner {
 
                 // log::debug!("match_merged={:?}", match_merged);
                 if let Some(mut mm) = match_merged {
-                    mm.add_original_pair(pair.clone());
+                    mm.add_original_pair(&pair);
                     self.push_match(mm);
                 } else if mapable {
                     merged_rc = m.reverse_complement();
@@ -434,7 +434,7 @@ impl PairEndScanner {
                     //     log::debug!("match_merged_rc={:#?}", match_merged_rc);
                     // };
                     if let Some(mut mmr) = match_merged_rc {
-                        mmr.add_original_pair(pair.clone());
+                        mmr.add_original_pair(&pair);
                         self.push_match(mmr);
                     }
                 }
@@ -447,7 +447,7 @@ impl PairEndScanner {
             //     log::debug!("match_r1={:#?}", match_r1);
             // };
             if let Some(mut mr1) = match_r1 {
-                mr1.add_original_pair(pair.clone());
+                mr1.add_original_pair(&pair);
                 self.push_match(mr1);
             } else if mapable {
                 rcr1 = r1.reverse_complement();
@@ -456,7 +456,7 @@ impl PairEndScanner {
                 //     log::debug!("match_rcr1={:#?}", match_rcr1);
                 // };
                 if let Some(mut mrc1) = match_rcr1 {
-                    mrc1.add_original_pair(pair.clone());
+                    mrc1.add_original_pair(&pair);
                     mrc1.set_reversed(true);
                     self.push_match(mrc1);
                 }
@@ -469,7 +469,7 @@ impl PairEndScanner {
             //     log::debug!("match_r2={:#?}", match_r2);
             // };
             if let Some(mut mr2) = match_r2 {
-                mr2.add_original_pair(pair.clone());
+                mr2.add_original_pair(&pair);
                 self.push_match(mr2);
             } else if mapable {
                 rcr2 = r2.reverse_complement();
@@ -478,7 +478,7 @@ impl PairEndScanner {
                 //     log::debug!("match_rcr2={:#?}", match_rcr2);
                 // };
                 if let Some(mut mrc2) = match_rcr2 {
-                    mrc2.add_original_pair(pair.clone());
+                    mrc2.add_original_pair(&pair);
                     mrc2.set_reversed(true);
                     self.push_match(mrc2);
                 }

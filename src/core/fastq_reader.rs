@@ -79,7 +79,7 @@ impl FastqReader
         let mut s = String::new();
         let name = if let Ok(true) = buf_reader.read_line(&mut s).and_then(|rl| Ok(rl > 0)) {
             let mut c = s.clone();
-            c.pop().and_then(|ch| {
+            c.pop().and_then(|ch| { // remove newline character if it exists
                 if ch != '\n' {
                     c.push(ch);
                 }

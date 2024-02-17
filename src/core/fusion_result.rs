@@ -22,10 +22,10 @@ use std::{
 };
 
 #[derive(Default)]
-pub(crate) struct FusionResult {
+pub(crate) struct FusionResult<'s> {
     pub(crate) m_left_gp: GenePos,
     pub(crate) m_right_gp: GenePos,
-    pub(crate) m_matches: Vec<ReadMatch>,
+    pub(crate) m_matches: Vec<ReadMatch<'s>>,
     pub(crate) m_unique: i32,
     pub(crate) m_title: String,
     pub(crate) m_left_ref: String,
@@ -46,7 +46,7 @@ pub(crate) struct FusionResult {
     pub(crate) m_right_intron_num: f32,
 }
 
-impl FusionResult {
+impl<'s> FusionResult<'s> {
     pub(crate) fn with_minimum() -> Self {
         Self {
             m_left_is_exon: false,

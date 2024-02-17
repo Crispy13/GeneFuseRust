@@ -13,7 +13,7 @@ use super::{fusion_mapper::FusionMapper, fusion_result::FusionResult};
 
 pub(crate) struct JsonReporter<'f> {
     m_filename: String,
-    m_fusion_mapper: &'f FusionMapper,
+    m_fusion_mapper: &'f FusionMapper<'f>,
     m_file: BufWriter<File>,
     // m_fusion_results: Vec<FusionResult>,
 }

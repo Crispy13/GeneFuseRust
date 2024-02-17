@@ -62,6 +62,8 @@ impl FusionScan {
         log::debug!("Reading reference, {}", &ref_file);
         m_reference.read_all();
 
+        // read input seq fastqs
+
         let mut scanner_m_ref = ScannerFastaReader::new(m_reference);
 
         let fusion_csv_paths = self.get_fusion_csv_vec_from_input()?;
@@ -76,6 +78,8 @@ impl FusionScan {
                 self.m_thread_num / fusion_csv_paths.len(),
             )
         };
+
+        log::info!("given csv count={}, parallel job count={}, inner_thread_num={}", fusion_csv_paths.len(), outer_thread_num, inner_thread_num);
 
         let tp = ThreadPoolBuilder::new()
             .num_threads(outer_thread_num)
@@ -286,7 +290,7 @@ pub(crate) trait Scanner {
     // fn drop_and_get_back_fasta_reader(self) -> FastaReader;
 }
 
-impl Scanner for PairEndScanner {
+impl<'s> Scanner for PairEndScanner<'s> {
     fn scan(&mut self) -> Result<bool, Error> {
         self.scan()
     }
@@ -300,7 +304,7 @@ impl Scanner for PairEndScanner {
     // }
 }
 
-impl Scanner for SingleEndScanner {
+impl<'s> Scanner for SingleEndScanner<'s> {
     fn scan(&mut self) -> Result<bool, Error> {
         self.scan()
     }

@@ -12,7 +12,7 @@ pub(crate) const FUSIONSCAN_VER: &str = env!("CARGO_PKG_VERSION");
 
 pub(crate) struct HtmlReporter<'f> {
     m_filename: String,
-    m_fusion_mapper: &'f mut FusionMapper,
+    m_fusion_mapper: &'f mut FusionMapper<'f>,
     m_file: BufWriter<File>,
     // m_fusion_results: Vec<FusionResult>,
 }
@@ -21,7 +21,7 @@ impl<'f> HtmlReporter<'f>
 {
     pub(crate) fn new(
         filename: String,
-        mapper: &'f mut FusionMapper,
+        mapper: &'f mut FusionMapper<'f>,
     ) -> Result<Self, Error> {
         let m_file = BufWriter::new(File::create(&filename)?);
         Ok(Self {

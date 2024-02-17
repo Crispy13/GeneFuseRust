@@ -20,16 +20,16 @@ use super::{
     edit_distance::edit_distance, fasta_reader::FastaReader, fusion::Fusion, fusion_result::FusionResult, fusion_scan::Error, indexer::{Indexer, SeqMatch}, matcher::Matcher, read::SequenceRead, read_match::ReadMatch, sequence::reverse_complement
 };
 
-pub(crate) struct FusionMapper {
+pub(crate) struct FusionMapper<'s> {
     pub(crate) m_ref_file: String,
     pub(crate) m_fusion_match_size: i32,
     pub(crate) m_indexer: Indexer,
     pub(crate) fusion_list: Vec<Fusion>,
-    pub(crate) fusion_matches: Mutex<Vec<Vec<ReadMatch>>>,
-    pub(crate) m_fusion_results: Vec<FusionResult>,
+    pub(crate) fusion_matches: Mutex<Vec<Vec<ReadMatch<'s>>>>,
+    pub(crate) m_fusion_results: Vec<FusionResult<'s>>,
 }
 
-impl FusionMapper {
+impl<'s> FusionMapper<'s> {
     pub(crate) fn from_ref_and_fusion_files(
         ref_file: &str,
         fusion_file: &str,

@@ -13,9 +13,9 @@ use super::{
 };
 
 #[derive(PartialEq, Clone, Debug)]
-pub(crate) struct ReadMatch {
+pub(crate) struct ReadMatch<'s> {
     pub(crate) m_read: SequenceRead,
-    pub(crate) m_original_reads: Vec<SequenceRead>,
+    pub(crate) m_original_reads: Vec<&'s SequenceRead>,
     pub(crate) m_overall_distance: i32,
     pub(crate) m_left_distance: i32,
     pub(crate) m_right_distance: i32,
@@ -27,7 +27,7 @@ pub(crate) struct ReadMatch {
     pub(crate) m_right_gp: GenePos,
 }
 
-impl ReadMatch {
+impl<'s> ReadMatch<'s> {
     /// reversed = false, on default
     pub(crate) fn new(
         r: SequenceRead,
@@ -63,13 +63,13 @@ impl ReadMatch {
         self.m_reversed = flag;
     }
 
-    pub(crate) fn add_original_read(&mut self, r: SequenceRead) {
+    pub(crate) fn add_original_read(&mut self, r: &SequenceRead) {
         self.m_original_reads.push(r);
     }
 
-    pub(crate) fn add_original_pair(&mut self, pair: SequenceReadPair) -> () {
-        self.m_original_reads.push(pair.m_left);
-        self.m_original_reads.push(pair.m_right);
+    pub(crate) fn add_original_pair(&mut self, pair: &SequenceReadPair) -> () {
+        self.m_original_reads.push(&pair.m_left);
+        self.m_original_reads.push(&pair.m_right);
     }
 
     pub(crate) fn get_read(&self) -> &SequenceRead {
@@ -157,7 +157,7 @@ impl ReadMatch {
     }
 }
 
-impl fmt::Display for ReadMatch {
+impl<'s> fmt::Display for ReadMatch<'s> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let dir_str = if self.m_reversed {
             ", read direction: reversed complement"
@@ -190,7 +190,7 @@ impl fmt::Display for ReadMatch {
     }
 }
 
-impl PartialOrd for ReadMatch {
+impl<'s> PartialOrd for ReadMatch<'s> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.m_read_break.partial_cmp(&other.m_read_break) {
             Some(Ordering::Equal) => {}

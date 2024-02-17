@@ -35,7 +35,7 @@ struct ReadRepository {
     // repo_not_empty: Condvar,
 }
 
-pub(crate) struct SingleEndScanner {
+pub(crate) struct SingleEndScanner<'s> {
     m_fusion_file: String,
     m_ref_file: String,
     m_read1_file: String,
@@ -44,11 +44,11 @@ pub(crate) struct SingleEndScanner {
     m_repo_o: Option<ReadRepository>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
-    m_fusion_mapper_o: Option<FusionMapper>,
+    m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
 }
 
-impl SingleEndScanner {
+impl<'s> SingleEndScanner<'s> {
     pub(crate) fn new(
         fusion_file: String,
         ref_file: String,
@@ -152,13 +152,13 @@ impl SingleEndScanner {
             let match_r1 = m_fusion_mapper.map_read(&r1, &mut mapable, 2, 20)?;
 
             if let Some(mut mr1) = match_r1 {
-                mr1.add_original_read(r1.clone());
+                mr1.add_original_read(&r1);
                 self.push_match(mr1);
             } else if mapable {
                 let rcr1 = r1.reverse_complement();
                 let match_rcr1 = m_fusion_mapper.map_read(&rcr1, &mut mapable, 2, 20)?;
                 if let Some(mut mrcr1) = match_rcr1 {
-                    mrcr1.add_original_read(r1.clone());
+                    mrcr1.add_original_read(&r1);
                     mrcr1.set_reversed(true);
                     self.push_match(mrcr1);
                 }
