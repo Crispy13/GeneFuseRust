@@ -1,7 +1,9 @@
 use core::num;
-use std::{error::Error, fmt::Write};
+use std::{error, fmt::Write};
 
 use crate::aux::he::OrExaplain;
+
+use super::fusion_scan::Error;
 // use anyhow::Result;
 
 #[derive(Debug, Clone)]
@@ -39,7 +41,7 @@ impl Gene {
         self.m_name != "invalid" && self.m_start != 0 && self.m_end != 0
     }
 
-    pub(crate) fn parse(line_str: &str) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn parse(line_str: &str) -> Result<Self, Error> {
         let splitted = line_str.split(",").collect::<Vec<&str>>();
         log::debug!("splitted={:?}", splitted);
 
@@ -127,7 +129,7 @@ impl Gene {
         }
     }
 
-    pub(crate) fn pos2str(&self, pos: i32) -> Result<String, Box<dyn Error>> {
+    pub(crate) fn pos2str(&self, pos: i32) -> Result<String, Error> {
         let pp = pos.abs() + self.m_start;
 
         let mut ss = format!("{}:", self.m_name);

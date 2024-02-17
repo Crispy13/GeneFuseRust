@@ -1,9 +1,11 @@
 use std::{
     borrow::Cow,
     cmp::{Ordering, Reverse},
-    error::Error,
-    sync::Mutex,
+    error,
+    sync::{Arc, Mutex},
 };
+
+use rayon::ThreadPool;
 
 use crate::{
     aux::{
@@ -15,15 +17,7 @@ use crate::{
 };
 
 use super::{
-    edit_distance::edit_distance,
-    fasta_reader::FastaReader,
-    fusion::Fusion,
-    fusion_result::FusionResult,
-    indexer::{Indexer, SeqMatch},
-    matcher::Matcher,
-    read::SequenceRead,
-    read_match::ReadMatch,
-    sequence::reverse_complement,
+    edit_distance::edit_distance, fasta_reader::FastaReader, fusion::Fusion, fusion_result::FusionResult, fusion_scan::Error, indexer::{Indexer, SeqMatch}, matcher::Matcher, read::SequenceRead, read_match::ReadMatch, sequence::reverse_complement
 };
 
 pub(crate) struct FusionMapper {
@@ -39,7 +33,7 @@ impl FusionMapper {
     pub(crate) fn from_ref_and_fusion_files(
         ref_file: &str,
         fusion_file: &str,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Error> {
         let fusion_list = Fusion::parse_csv(fusion_file)?;
         log::debug!("Parsed csv.");
 
@@ -65,9 +59,9 @@ impl FusionMapper {
     }
 
     pub(crate) fn from_fasta_reader_and_fusion_files(
-        fasta_reader:FastaReader,
+        fasta_reader:Arc<FastaReader>,
         fusion_file: &str,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Error> {
         let fusion_list = Fusion::parse_csv(fusion_file)?;
         log::debug!("Parsed csv.");
 
@@ -102,7 +96,7 @@ impl FusionMapper {
         mapable: &mut bool,
         distance_req: i32,
         qual_req: i32,
-    ) -> Result<Option<ReadMatch>, Box<dyn Error>> {
+    ) -> Result<Option<ReadMatch>, Error> {
         let mut mapping = self.m_indexer.map_read(r);
 
         // if r.m_name.contains(DBT) {
@@ -147,15 +141,15 @@ impl FusionMapper {
         self.m_indexer.get_ref()
     }
 
-    fn get_ref_mut(&mut self) -> Option<&mut FastaReader> {
-        // indexer can be NULL in cpp code.
-        // if self.m_indexer.is_none() {
-        //     None
-        // } else {
-        //     self.m_indexer.get_ref()
-        // }
-        self.m_indexer.get_ref_mut()
-    }
+    // fn get_ref_mut(&mut self) -> Option<&mut FastaReader> {
+    //     // indexer can be NULL in cpp code.
+    //     // if self.m_indexer.is_none() {
+    //     //     None
+    //     // } else {
+    //     //     self.m_indexer.get_ref()
+    //     // }
+    //     self.m_indexer.get_ref_mut()
+    // }
 
     fn make_match(&self, r: &SequenceRead, mapping: &mut [SeqMatch]) -> Option<ReadMatch> {
         if mapping.len() != 2 {
@@ -279,7 +273,7 @@ impl FusionMapper {
             ),
         }
     }
-    pub(crate) fn filter_matches(&mut self) -> () {
+    pub(crate) fn filter_matches(&mut self, inner_thread_pool:&ThreadPool) -> () {
         // calc the sequence number before any filtering
         // let mut total = 0;
         // for fm in self.fusion_matches.lock().unwrap().iter() {
@@ -298,7 +292,7 @@ impl FusionMapper {
         self.remove_by_complexity();
         self.remove_by_distance();
         self.remove_indels();
-        self.remove_alignables();
+        self.remove_alignables(inner_thread_pool);
     }
 
     fn remove_by_complexity(&mut self) -> () {
@@ -485,7 +479,7 @@ impl FusionMapper {
         log::info!("found {} fusions", self.m_fusion_results.len(),);
     }
 
-    fn remove_alignables(&mut self) -> () {
+    fn remove_alignables(&mut self, inner_thread_pool:&ThreadPool) -> () {
         if self.get_ref().is_none() {
             return;
         }
@@ -502,7 +496,7 @@ impl FusionMapper {
         }
 
         log::info!("making matcher...");
-        let mut matcher = Matcher::from_ref_and_seqs(self.m_indexer.get_ref_mut(), &seqs);
+        let mut matcher = Matcher::from_ref_and_seqs(Arc::clone(self.m_indexer.m_reference.as_ref().unwrap()), &seqs, inner_thread_pool);
 
         let mut removed = 0;
 

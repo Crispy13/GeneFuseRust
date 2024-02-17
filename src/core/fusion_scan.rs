@@ -1,14 +1,18 @@
 use std::{
-    error::Error,
+    error,
     fs::File,
     io::{BufRead, BufReader},
     marker::PhantomData,
     mem,
     path::Path,
     process::exit,
+    sync::Arc,
 };
 
-use rayon::ThreadPoolBuilder;
+use rayon::{
+    prelude::*,
+    ThreadPoolBuilder,
+};
 
 use crate::{
     aux::limited_bufreader::LimitedBufReader,
@@ -20,6 +24,7 @@ use crate::{
 
 use super::{fusion::Fusion, pescanner::PairEndScanner};
 
+pub(crate) type Error = Box<dyn error::Error + Send + Sync>;
 pub(crate) struct FusionScan {
     m_fusion_file: String,
     m_read1_file: String,
@@ -41,13 +46,6 @@ impl FusionScan {
 
         m_thread_num: usize,
     ) -> FusionScan {
-        // build global thread pool.
-        ThreadPoolBuilder::new()
-            .num_threads(m_thread_num as usize)
-            .thread_name(|i| format!("MainThreadPool-{i}"))
-            .build_global()
-            .unwrap();
-
         Self {
             m_fusion_file,
             m_read1_file,
@@ -59,7 +57,7 @@ impl FusionScan {
         }
     }
 
-    pub(crate) fn scan_per_fusion_csv(&self) -> Result<bool, Box<dyn Error>> {
+    pub(crate) fn scan_per_fusion_csv(&self) -> Result<bool, Error> {
         // read reference first.
         let ref_file = self.m_ref_file.as_str();
         let mut m_reference = FastaReader::new(ref_file, false)?;
@@ -72,39 +70,55 @@ impl FusionScan {
         let fusion_csv_paths = self.get_fusion_csv_vec_from_input()?;
         let (html_file_paths, json_file_paths) =
             self.get_report_names_from_fusion_csvs(fusion_csv_paths.as_slice());
-        fusion_csv_paths
-            .into_iter()
-            .zip(html_file_paths.into_iter().zip(json_file_paths))
-            .map(|(fusion_csv, (html_file, json_file))| {
-                let res = if self.m_read2_file != "" {
-                    let pescanner = PairEndScanner::new(
-                        fusion_csv,
-                        self.m_ref_file.clone(),
-                        self.m_read1_file.clone(),
-                        self.m_read2_file.clone(),
-                        html_file,
-                        json_file,
-                        self.m_thread_num as i32,
-                    );
 
-                    scanner_m_ref.scan_per_fusion_csv(pescanner)
-                } else {
-                    let sescanner = SingleEndScanner::new(
-                        fusion_csv,
-                        self.m_ref_file.clone(),
-                        self.m_read1_file.clone(),
-                        html_file,
-                        json_file,
-                        self.m_thread_num as i32,
-                    );
+        let (outer_thread_num, inner_thread_num) = if fusion_csv_paths.len() >= self.m_thread_num {
+            (self.m_thread_num, 1_usize)
+        } else {
+            (fusion_csv_paths.len(), self.m_thread_num / fusion_csv_paths.len())
+        };
 
-                    scanner_m_ref.scan_per_fusion_csv(sescanner)
-                };
+        let tp = ThreadPoolBuilder::new()
+            .num_threads(outer_thread_num)
+            .thread_name(|i| format!("MainThreadPool-{i}"))
+            .build()
+            .unwrap();
 
-                res
-            })
-            .collect::<Result<Vec<bool>, Box<dyn Error>>>()
-            .and_then(|vb| Ok(vb.into_iter().all(|e| e)))
+        tp.install(|| {
+            fusion_csv_paths
+                .into_iter()
+                .zip(html_file_paths.into_iter().zip(json_file_paths))
+                .par_bridge()
+                .map(|(fusion_csv, (html_file, json_file))| {
+                    let res = if self.m_read2_file != "" {
+                        let pescanner = PairEndScanner::new(
+                            fusion_csv,
+                            self.m_ref_file.clone(),
+                            self.m_read1_file.clone(),
+                            self.m_read2_file.clone(),
+                            html_file,
+                            json_file,
+                            inner_thread_num as i32,
+                        );
+
+                        scanner_m_ref.scan_per_fusion_csv(pescanner)
+                    } else {
+                        let sescanner = SingleEndScanner::new(
+                            fusion_csv,
+                            self.m_ref_file.clone(),
+                            self.m_read1_file.clone(),
+                            html_file,
+                            json_file,
+                            inner_thread_num as i32,
+                        );
+
+                        scanner_m_ref.scan_per_fusion_csv(sescanner)
+                    };
+
+                    res
+                })
+                .collect::<Result<Vec<bool>, Error>>()
+                .and_then(|vb| Ok(vb.into_iter().all(|e| e)))
+        })
     }
 
     fn get_report_names_from_fusion_csvs(
@@ -156,7 +170,7 @@ impl FusionScan {
         (html_file_vec, json_file_vec)
     }
 
-    fn get_fusion_csv_vec_from_input(&self) -> Result<Vec<String>, Box<dyn Error>> {
+    fn get_fusion_csv_vec_from_input(&self) -> Result<Vec<String>, Error> {
         let mut f = LimitedBufReader::new(
             BufReader::new(File::open(self.m_fusion_file.as_str())?),
             1000,
@@ -185,7 +199,7 @@ impl FusionScan {
         Ok(fusion_csvs)
     }
 
-    fn scan_single_csv(self) -> Result<bool, Box<dyn Error>> {
+    fn scan_single_csv(self) -> Result<bool, Error> {
         if self.m_read2_file != "" {
             let mut pescanner = PairEndScanner::new(
                 self.m_fusion_file,
@@ -212,7 +226,7 @@ impl FusionScan {
         }
     }
 
-    pub(crate) fn scan(self) -> Result<bool, Box<dyn Error>> {
+    pub(crate) fn scan(self) -> Result<bool, Error> {
         // run proper function by the type of input fusion file.
         match Path::new(self.m_fusion_file.as_str())
             .extension()
@@ -227,59 +241,61 @@ impl FusionScan {
 }
 
 struct ScannerFastaReader {
-    fasta_reader: Option<FastaReader>,
+    fasta_reader: Option<Arc<FastaReader>>, // use Option to use mem::take.
 }
 
 impl ScannerFastaReader {
     fn new(fasta_reader: FastaReader) -> Self {
         Self {
-            fasta_reader: Some(fasta_reader),
+            fasta_reader: Some(Arc::new(fasta_reader)),
         }
     }
 }
 
 impl ScannerFastaReader {
-    fn scan_per_fusion_csv<S: Scanner>(&mut self, mut scanner: S) -> Result<bool, Box<dyn Error>> {
-        let r = scanner.scan_per_fusion_csv(mem::take(&mut self.fasta_reader).unwrap());
+    fn scan_per_fusion_csv<S: Scanner>(&self, mut scanner: S) -> Result<bool, Error> {
+        // let r = scanner.scan_per_fusion_csv(mem::take(&mut self.fasta_reader).unwrap());
 
-        self.fasta_reader = Some(scanner.drop_and_get_back_fasta_reader());
+        let r = scanner.scan_per_fusion_csv(Arc::clone(self.fasta_reader.as_ref().unwrap()));
+
+        // self.fasta_reader = Some(scanner.drop_and_get_back_fasta_reader());
 
         r
     }
 }
 
 pub(crate) trait Scanner {
-    fn scan(&mut self) -> Result<bool, Box<dyn Error>>;
+    fn scan(&mut self) -> Result<bool, Error>;
 
-    fn scan_per_fusion_csv(&mut self, ref_fasta: FastaReader) -> Result<bool, Box<dyn Error>>;
+    fn scan_per_fusion_csv(&mut self, ref_fasta: Arc<FastaReader>) -> Result<bool, Error>;
 
-    fn drop_and_get_back_fasta_reader(self) -> FastaReader;
+    // fn drop_and_get_back_fasta_reader(self) -> FastaReader;
 }
 
 impl Scanner for PairEndScanner {
-    fn scan(&mut self) -> Result<bool, Box<dyn Error>> {
+    fn scan(&mut self) -> Result<bool, Error> {
         self.scan()
     }
 
-    fn scan_per_fusion_csv(&mut self, ref_fasta: FastaReader) -> Result<bool, Box<dyn Error>> {
+    fn scan_per_fusion_csv(&mut self, ref_fasta: Arc<FastaReader>) -> Result<bool, Error> {
         self.scan_per_fusion_csv(ref_fasta)
     }
 
-    fn drop_and_get_back_fasta_reader(self) -> FastaReader {
-        self.drop_and_get_back_fasta_reader()
-    }
+    // fn drop_and_get_back_fasta_reader(self) -> FastaReader {
+    //     self.drop_and_get_back_fasta_reader()
+    // }
 }
 
 impl Scanner for SingleEndScanner {
-    fn scan(&mut self) -> Result<bool, Box<dyn Error>> {
+    fn scan(&mut self) -> Result<bool, Error> {
         self.scan()
     }
 
-    fn scan_per_fusion_csv(&mut self, ref_fasta: FastaReader) -> Result<bool, Box<dyn Error>> {
+    fn scan_per_fusion_csv(&mut self, ref_fasta: Arc<FastaReader>) -> Result<bool, Error> {
         self.scan_per_fusion_csv(ref_fasta)
     }
 
-    fn drop_and_get_back_fasta_reader(self) -> FastaReader {
-        self.drop_and_get_back_fasta_reader()
-    }
+    // fn drop_and_get_back_fasta_reader(self) -> FastaReader {
+    //     self.drop_and_get_back_fasta_reader()
+    // }
 }

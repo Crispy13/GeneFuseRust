@@ -235,7 +235,7 @@ macro_rules! make_custom_error4 {
             // }
         }
 
-        impl Error for $n {}
+        impl error::Error for $n {}
     };
 }
 

@@ -7,11 +7,13 @@ use crate::{
     utils::{dis_connected_count, int2str, StringCPP},
 };
 
+use super::fusion_scan::Error;
+
 use super::{
     common::GenePos, edit_distance, fusion::Fusion, gene::Gene, read, read_match::ReadMatch,
 };
 use std::{
-    error::Error,
+    error,
     fmt::Write,
     fs::File,
     io::{BufWriter, Read, Write as io_write},
@@ -512,7 +514,7 @@ impl FusionResult {
     pub(crate) fn print_fusion_protein_html(
         &mut self,
         buf_writer: &mut BufWriter<File>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         log::debug!("self.m_left_gp.contig={}, self.m_right_gp.contig={}", self.m_left_gp.contig, self.m_right_gp.contig);
         log::debug!("self.m_left_exon_or_intron_id={}, self.m_right_exon_or_intron_id={}", self.m_left_exon_or_intron_id,self.m_right_exon_or_intron_id);
         log::debug!("self.m_left_gene.is_reversed={}, self.m_right_gene.is_reversed={}", self.m_left_gene.is_reversed(), self.m_right_gene.is_reversed());
@@ -577,7 +579,7 @@ impl FusionResult {
     fn print_left_protein_html(
         &self,
         buf_writer: &mut BufWriter<File>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         let total_step = self.m_left_exon_num + self.m_left_intron_num;
         let mut exon = 1_i32;
         let mut intron = 1;
@@ -648,7 +650,7 @@ impl FusionResult {
     fn print_right_protein_html(
         &self,
         buf_writer: &mut BufWriter<File>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         let total_step = self.m_right_exon_num + self.m_right_intron_num;
         let mut exon = self.m_right_exon_or_intron_id;
         let mut intron = self.m_right_exon_or_intron_id;
@@ -730,7 +732,7 @@ impl FusionResult {
         number: i32,
         percent: f32,
         style: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         let mut int_percent = percent as i32;
         if int_percent <= 0 {
             int_percent = 1;

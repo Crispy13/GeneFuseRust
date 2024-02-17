@@ -1,12 +1,12 @@
 use std::{
-    error::Error,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    error,
+    sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc},
     thread::sleep,
     time::Duration,
 };
 
 use crossbeam::queue::ArrayQueue;
-use rayon::ThreadPoolBuilder;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::core::{
     common::{PACK_NUM_LIMIT, PACK_SIZE},
@@ -15,8 +15,7 @@ use crate::core::{
 };
 
 use super::{
-    fasta_reader::FastaReader, fusion_mapper::FusionMapper, html_reporter::HtmlReporter,
-    json_reporter::JsonReporter, read::SequenceRead, read_match::ReadMatch,
+    fasta_reader::FastaReader, fusion_mapper::FusionMapper, fusion_scan::Error, html_reporter::HtmlReporter, json_reporter::JsonReporter, read::SequenceRead, read_match::ReadMatch
 };
 
 #[derive(Debug)]
@@ -46,6 +45,7 @@ pub(crate) struct SingleEndScanner {
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper>,
+    m_thread_pool: ThreadPool,
 }
 
 impl SingleEndScanner {
@@ -57,6 +57,8 @@ impl SingleEndScanner {
         json: String,
         thread_num: i32,
     ) -> Self {
+        let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
+
         Self {
             m_fusion_file: fusion_file,
             m_ref_file: ref_file,
@@ -67,6 +69,7 @@ impl SingleEndScanner {
             m_produce_finished: AtomicBool::new(false),
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
+            m_thread_pool: itp,
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
@@ -76,8 +79,8 @@ impl SingleEndScanner {
         self.m_repo_o.as_ref().unwrap()
     }
 
-    fn _scan(&mut self) -> Result<bool, Box<dyn Error>> {
-        rayon::scope(|tps| {
+    fn _scan(&mut self) -> Result<bool, Error> {
+        self.m_thread_pool.scope(|tps| {
             tps.spawn(|tps| self.producer_task().unwrap());
 
             for t in (0..(rayon::current_num_threads() - 1)) {
@@ -109,7 +112,7 @@ impl SingleEndScanner {
         // exit(0);
 
         log::debug!("run matches methods...");
-        m_fusion_mapper.filter_matches();
+        m_fusion_mapper.filter_matches(&self.m_thread_pool);
         m_fusion_mapper.sort_matches();
         m_fusion_mapper.cluster_matches();
 
@@ -124,7 +127,7 @@ impl SingleEndScanner {
         Ok(true)
     }
 
-    pub(crate) fn scan(&mut self) -> Result<bool, Box<dyn Error>> {
+    pub(crate) fn scan(&mut self) -> Result<bool, Error> {
         log::debug!("Entered into scan.");
         self.m_fusion_mapper_o = Some(FusionMapper::from_ref_and_fusion_files(
             &self.m_ref_file,
@@ -141,7 +144,7 @@ impl SingleEndScanner {
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
     }
 
-    fn scan_single_end(&self, pack: ReadPack) -> Result<bool, Box<dyn Error>> {
+    fn scan_single_end(&self, pack: ReadPack) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, r1) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -194,15 +197,18 @@ impl SingleEndScanner {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPack) {
+    fn produce_pack(&self, mut pack: ReadPack) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
 
         let m_repo = self.m_repo_o.as_ref().unwrap();
 
         loop {
             match m_repo.pack_buffer.push(pack) {
-                Ok(_) => break,
+                Ok(_) => break Ok(()),
                 Err(p) => {
+                    if self.m_thread_num == 1 {
+                        self.consume_pack()?;
+                    }
                     pack = p;
                 }
             }
@@ -223,7 +229,7 @@ impl SingleEndScanner {
         // lock.unlock();
     }
 
-    fn consume_pack(&self) -> Result<(), Box<dyn Error>> {
+    fn consume_pack(&self) -> Result<(), Error> {
         let data = loop {
             if let Some(data) = self.m_repo_o.as_ref().unwrap().pack_buffer.pop() {
                 break data;
@@ -250,7 +256,7 @@ impl SingleEndScanner {
         Ok(())
     }
 
-    fn producer_task(&self) -> Result<(), Box<dyn Error>> {
+    fn producer_task(&self) -> Result<(), Error> {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
@@ -275,7 +281,7 @@ impl SingleEndScanner {
             // a full pack
             if count == PACK_SIZE {
                 let pack = ReadPack { data, count };
-                self.produce_pack(pack);
+                self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
                 data = Vec::<SequenceRead>::with_capacity(PACK_SIZE as usize);
@@ -294,7 +300,7 @@ impl SingleEndScanner {
         }
 
         let pack = ReadPack { data, count };
-        self.produce_pack(pack);
+        self.produce_pack(pack)?;
 
         // lock self.m_repo().read_counter_mtx;
         log::debug!("producing finished.");
@@ -302,16 +308,14 @@ impl SingleEndScanner {
         // lock.unlock();
 
         // producing tasks has been done, from now try to consume the tasks.
-        if rayon::current_num_threads() > 1 {
-            while !self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {
-                self.consume_pack()?;
-            }
+        while !self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {
+            self.consume_pack()?;
         }
 
         Ok(())
     }
 
-    fn consumer_task(&self) -> Result<(), Box<dyn Error>> {
+    fn consumer_task(&self) -> Result<(), Error> {
         log::debug!("Entered consumer_task()");
         loop {
             // lock = self.m_repo().read_counter_mtx;
@@ -339,7 +343,7 @@ impl SingleEndScanner {
         todo!()
     }
 
-    pub(crate) fn html_report(&mut self) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn html_report(&mut self) -> Result<(), Error> {
         if self.m_html_file == "" {
             return Ok(());
         }
@@ -353,7 +357,7 @@ impl SingleEndScanner {
         Ok(())
     }
 
-    pub(crate) fn json_report(&self) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn json_report(&self) -> Result<(), Error> {
         if self.m_json_file == "" {
             return Ok(());
         }
@@ -369,8 +373,8 @@ impl SingleEndScanner {
 
     pub(crate) fn scan_per_fusion_csv(
         &mut self,
-        fasta_reader: FastaReader,
-    ) -> Result<bool, Box<dyn Error>> {
+        fasta_reader: Arc<FastaReader>,
+    ) -> Result<bool, Error> {
         log::debug!("Entered into scan.");
         self.m_fusion_mapper_o = Some(FusionMapper::from_fasta_reader_and_fusion_files(
             fasta_reader,
@@ -389,11 +393,11 @@ impl SingleEndScanner {
         Ok(self._scan()?)
     }
 
-    pub(crate) fn drop_and_get_back_fasta_reader(self) -> FastaReader {
-        self.m_fusion_mapper_o
-            .unwrap()
-            .m_indexer
-            .m_reference
-            .unwrap()
-    }
+    // pub(crate) fn drop_and_get_back_fasta_reader(self) -> FastaReader {
+    //     self.m_fusion_mapper_o
+    //         .unwrap()
+    //         .m_indexer
+    //         .m_reference
+    //         .unwrap()
+    // }
 }

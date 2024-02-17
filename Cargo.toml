@@ -19,12 +19,6 @@ rustc-hash = "1.1.0"
 tikv-jemallocator = "0.5.4"
 
 
-[profile.dev]
-opt-level=3
-codegen-units=1
-lto=true
-
-
 [profile.release]
 codegen-units=1
 lto=true

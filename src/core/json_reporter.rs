@@ -1,5 +1,5 @@
 use std::ops::DerefMut;
-use std::{error::Error, fs::File, io::BufWriter};
+use std::{error, fs::File, io::BufWriter};
 use std::io::Write;
 
 use chrono::Local;
@@ -8,6 +8,7 @@ use crate::aux::global_settings::global_settings;
 use crate::core::html_reporter::FUSIONSCAN_VER;
 use crate::genefuse::COMMAND;
 
+use super::fusion_scan::Error;
 use super::{fusion_mapper::FusionMapper, fusion_result::FusionResult};
 
 pub(crate) struct JsonReporter<'f> {
@@ -20,7 +21,7 @@ pub(crate) struct JsonReporter<'f> {
 impl<'f> JsonReporter<'f>
 
 {
-    pub(crate) fn new(file_name:String, mapper:&'f FusionMapper) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn new(file_name:String, mapper:&'f FusionMapper) -> Result<Self, Error> {
         let f = BufWriter::new(File::create(&file_name)?);
         Ok(Self {
             m_filename: file_name,
@@ -30,7 +31,7 @@ impl<'f> JsonReporter<'f>
         })
     }
 
-    pub(crate) fn run(&mut self) -> Result<(), Box<dyn Error>>{
+    pub(crate) fn run(&mut self) -> Result<(), Error>{
         let f = &mut self.m_file;
 
         writeln!(f, "{{", )?;

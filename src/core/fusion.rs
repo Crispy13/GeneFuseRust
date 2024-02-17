@@ -1,13 +1,13 @@
 use std::{
     default,
-    error::Error,
+    error,
     fs::File,
     io::{BufRead, BufReader, Read},
 };
 
 use crate::aux::limited_bufreader::LimitedBufReader;
 
-use super::gene::Gene;
+use super::{fusion_scan::Error, gene::Gene};
 
 // use anyhow::Result;
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ impl Fusion {
         Self { m_gene: gene }
     }
 
-    pub(crate) fn parse_csv(filename: &str) -> Result<Vec<Self>, Box<dyn Error>> {
+    pub(crate) fn parse_csv(filename: &str) -> Result<Vec<Self>, Error> {
         const max_line: usize = 4096;
 
         let mut file =
@@ -102,7 +102,7 @@ impl Fusion {
         self.m_gene.is_reversed()
     }
 
-    fn pos2str(&self, pos: i32) -> Result<String, Box<dyn Error>> {
+    fn pos2str(&self, pos: i32) -> Result<String, Error> {
         self.m_gene.pos2str(pos)
     }
 }

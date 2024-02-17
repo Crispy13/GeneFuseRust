@@ -1,7 +1,7 @@
 use std::panic::Location;
 use std::{
     collections::{BTreeMap, HashMap},
-    error::Error,
+    error,
     fmt,
     fs::File,
     io::{self, BufRead, BufReader, Read},
@@ -16,6 +16,8 @@ use crate::aux::he::{
 };
 use crate::aux::limited_bufreader::LimitedBufReader;
 use crate::aux::pbar::prepare_pbar;
+
+use super::fusion_scan::Error;
 
 make_custom_error4!(EmptyFileError, "Loaded file is empty.");
 
@@ -38,7 +40,7 @@ impl FastaReader {
     pub(crate) fn new(
         fasta_file: impl AsRef<Path>,
         force_upper_case: bool,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Error> {
         let fasta_file = fasta_file.as_ref();
 
         if fasta_file.is_dir() {

@@ -3,11 +3,11 @@
 use std::{
     array,
     collections::{hash_map, BTreeMap, HashMap},
-    error::Error,
+    error,
     fmt::{self, Write},
     hash::Hash,
     io::Write as io_write,
-    ops::Index,
+    ops::Index, sync::Arc,
 };
 
 use crate::{
@@ -24,13 +24,7 @@ use crate::{
 };
 
 use super::{
-    common::GenePos,
-    fasta_reader::FastaReader,
-    fastq_reader::FastqReader,
-    fusion::Fusion,
-    gene::Gene,
-    read::SequenceRead,
-    sequence::{reverse_complement, Sequence},
+    common::GenePos, fasta_reader::FastaReader, fastq_reader::FastqReader, fusion::Fusion, fusion_scan::Error, gene::Gene, read::SequenceRead, sequence::{reverse_complement, Sequence}
 };
 
 const MATCH_TOP: u8 = 3;
@@ -72,7 +66,7 @@ impl fmt::Display for SeqMatch {
 
 pub(crate) struct Indexer {
     m_ref_file: String,
-    pub(crate) m_reference: Option<FastaReader>,
+    pub(crate) m_reference: Option<Arc<FastaReader>>,
     m_fusions: Vec<Fusion>,
     m_unique_pos: i32,
     m_dupe_pos: i32,
@@ -84,7 +78,7 @@ pub(crate) struct Indexer {
 }
 
 impl Indexer {
-    pub(crate) fn new(ref_file: &str, fusions: Vec<Fusion>) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn new(ref_file: &str, fusions: Vec<Fusion>) -> Result<Self, Error> {
         let mut m_reference = FastaReader::new(&ref_file, false)?;
 
         log::debug!("Reading reference, {}", &ref_file);
@@ -92,7 +86,7 @@ impl Indexer {
 
         Ok(Self {
             m_ref_file: ref_file.to_string(),
-            m_reference: Some(m_reference),
+            m_reference: Some(Arc::new(m_reference)),
             m_fusions: fusions,
             m_unique_pos: 0,
             m_dupe_pos: 0,
@@ -103,7 +97,7 @@ impl Indexer {
         })
     }
 
-    pub(crate) fn with_loaded_ref(m_reference: FastaReader, fusions: Vec<Fusion>) -> Self {
+    pub(crate) fn with_loaded_ref(m_reference: Arc<FastaReader>, fusions: Vec<Fusion>) -> Self {
         Self {
             m_ref_file: m_reference.m_fasta_file.clone(),
             m_reference: Some(m_reference),
@@ -118,12 +112,12 @@ impl Indexer {
     }
 
     pub(crate) fn get_ref(&self) -> Option<&FastaReader> {
-        self.m_reference.as_ref()
+        self.m_reference.as_ref().map(|e| e.as_ref())
     }
 
-    pub(crate) fn get_ref_mut(&mut self) -> Option<&mut FastaReader> {
-        self.m_reference.as_mut()
-    }
+    // pub(crate) fn get_ref_mut(&mut self) -> Option<&mut FastaReader> {
+    //     self.m_reference.as_mut()
+    // }
 
     pub(crate) fn make_index(&mut self) {
         if self.m_reference.is_none() {

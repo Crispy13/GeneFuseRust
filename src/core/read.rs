@@ -1,6 +1,8 @@
 use std::fmt::Write;
 use std::io::Write as iowrite;
-use std::{error::Error, io::BufWriter};
+use std::{error, io::BufWriter};
+
+use super::fusion_scan::Error;
 
 use crate::utils::StringCPP;
 
@@ -50,7 +52,7 @@ impl SequenceRead {
         &self,
         f: &mut std::io::BufWriter<std::fs::File>,
         breaks: Vec<i32>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         write!(
             f,
             "<td class='alignright'>{}</td>",
@@ -183,7 +185,7 @@ impl SequenceRead {
     pub(crate) fn print_file(
         &self,
         f: &mut BufWriter<std::fs::File>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         writeln!(f, "{}", self.m_name)?;
         writeln!(f, "{}", self.m_seq.m_str)?;
         writeln!(f, "{}", self.m_strand)?;

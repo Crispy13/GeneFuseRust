@@ -1,24 +1,18 @@
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::{prelude::*, ThreadPool, ThreadPoolBuilder};
 use std::{
-    error::Error,
+    error,
     io::Write,
     panic::Location,
     process::exit,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Condvar, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicUsize, Ordering}, Arc, Condvar, Mutex, RwLock
     },
     thread::sleep,
     time::Duration,
 };
 
 use super::{
-    common::{PACK_NUM_LIMIT, PACK_SIZE},
-    fasta_reader::{self, FastaReader},
-    fastq_reader::FastqReaderPair,
-    fusion_mapper::FusionMapper,
-    read::SequenceReadPair,
-    read_match::ReadMatch,
+    common::{PACK_NUM_LIMIT, PACK_SIZE}, fasta_reader::{self, FastaReader}, fastq_reader::FastqReaderPair, fusion_mapper::FusionMapper, fusion_scan::Error, read::SequenceReadPair, read_match::ReadMatch
 };
 use crate::{
     core::{html_reporter::HtmlReporter, json_reporter::JsonReporter},
@@ -58,6 +52,7 @@ pub(crate) struct PairEndScanner {
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper>,
+    m_thread_pool: ThreadPool,
 }
 
 impl PairEndScanner {
@@ -70,6 +65,8 @@ impl PairEndScanner {
         json: String,
         thread_num: i32,
     ) -> Self {
+        let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
+
         Self {
             m_fusion_file: fusion_file,
             m_ref_file: ref_file,
@@ -81,6 +78,7 @@ impl PairEndScanner {
             m_produce_finished: AtomicBool::new(false),
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
+            m_thread_pool: itp,
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
@@ -131,7 +129,7 @@ impl PairEndScanner {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPairPack) {
+    fn produce_pack(&self, mut pack: ReadPairPack) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
         // lock m_repo.mtx;
 
@@ -144,14 +142,16 @@ impl PairEndScanner {
 
         loop {
             match m_repo.pack_buffer.push(pack) {
-                Ok(_) => break,
+                Ok(_) => break Ok(()),
                 Err(p) => {
                     // means the buffer is full.
+                    if self.m_thread_num == 1 {
+                        self.consume_pack()?;
+                    }
                     pack = p;
                 }
             }
         }
-
         // *self.m_repo_mut().pack_buffer.get_mut(wp).unwrap() = pack;
         // m_repo.write_pos.fetch_add(1, Ordering::Relaxed);
         // log::debug!("Add 1 to write_pos.");
@@ -167,7 +167,7 @@ impl PairEndScanner {
         // lock.unlock();
     }
 
-    fn producer_task(&self) -> Result<(), Box<dyn Error>> {
+    fn producer_task(&self) -> Result<(), Error> {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
@@ -192,7 +192,7 @@ impl PairEndScanner {
             // a full pack
             if count == PACK_SIZE {
                 let pack = ReadPairPack { data, count };
-                self.produce_pack(pack);
+                self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
                 data = Vec::<SequenceReadPair>::with_capacity(PACK_SIZE as usize);
@@ -209,7 +209,7 @@ impl PairEndScanner {
         }
 
         let pack = ReadPairPack { data, count };
-        self.produce_pack(pack);
+        self.produce_pack(pack)?;
 
         // lock self.m_repo().read_counter_mtx;
         log::debug!("producing finished.");
@@ -217,24 +217,22 @@ impl PairEndScanner {
         // lock.unlock();
 
         // producing tasks has been done, from now try to consume the tasks.
-        if rayon::current_num_threads() > 1 {
-            while !self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {
-                self.consume_pack()?;
-            }
+        while !self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {
+            self.consume_pack()?;
         }
         
 
         Ok(())
     }
 
-    pub(crate) fn drop_and_get_back_fasta_reader(self) -> FastaReader {
-        self.m_fusion_mapper_o.unwrap().m_indexer.m_reference.unwrap()
-    }
+    // pub(crate) fn drop_and_get_back_fasta_reader(self) -> FastaReader {
+    //     self.m_fusion_mapper_o.unwrap().m_indexer.m_reference.unwrap()
+    // }
 
     pub(crate) fn scan_per_fusion_csv(
         &mut self,
-        fasta_reader: FastaReader,
-    ) -> Result<bool, Box<dyn Error>> {
+        fasta_reader: Arc<FastaReader>,
+    ) -> Result<bool, Error> {
         log::debug!("Entered into scan.");
         self.m_fusion_mapper_o = Some(FusionMapper::from_fasta_reader_and_fusion_files(
             fasta_reader,
@@ -253,7 +251,7 @@ impl PairEndScanner {
         Ok(self._scan()?)
     }
 
-    pub(crate) fn scan(&mut self) -> Result<bool, Box<dyn Error>> {
+    pub(crate) fn scan(&mut self) -> Result<bool, Error> {
         log::debug!("Entered into scan.");
         self.m_fusion_mapper_o = Some(FusionMapper::from_ref_and_fusion_files(
             &self.m_ref_file,
@@ -272,8 +270,8 @@ impl PairEndScanner {
         Ok(self._scan()?)
     }
 
-    fn _scan(&mut self) -> Result<bool, Box<dyn Error>> {
-        rayon::scope(|tps| {
+    fn _scan(&mut self) -> Result<bool, Error> {
+        self.m_thread_pool.scope(|tps| {
             tps.spawn(|tps| self.producer_task().unwrap());
 
             for t in (0..(rayon::current_num_threads() - 1)) {
@@ -305,7 +303,7 @@ impl PairEndScanner {
         // exit(0);
 
         log::debug!("run matches methods...");
-        m_fusion_mapper.filter_matches();
+        m_fusion_mapper.filter_matches(&self.m_thread_pool);
         m_fusion_mapper.sort_matches();
         m_fusion_mapper.cluster_matches();
 
@@ -320,7 +318,7 @@ impl PairEndScanner {
         Ok(true)
     }
 
-    fn consumer_task(&self) -> Result<(), Box<dyn Error>> {
+    fn consumer_task(&self) -> Result<(), Error> {
         log::debug!("Entered consumer_task()");
         loop {
             // lock = self.m_repo().read_counter_mtx;
@@ -344,7 +342,7 @@ impl PairEndScanner {
         Ok(())
     }
 
-    fn consume_pack(&self) -> Result<(), Box<dyn Error>> {
+    fn consume_pack(&self) -> Result<(), Error> {
         // let data = ReadPairPack {
         //     data: todo!(),
         //     count: todo!(),
@@ -397,7 +395,7 @@ impl PairEndScanner {
         Ok(())
     }
 
-    fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Box<dyn Error>> {
+    fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, pair) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -511,7 +509,7 @@ impl PairEndScanner {
         todo!()
     }
 
-    pub(crate) fn html_report(&mut self) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn html_report(&mut self) -> Result<(), Error> {
         if self.m_html_file == "" {
             return Ok(());
         }
@@ -525,7 +523,7 @@ impl PairEndScanner {
         Ok(())
     }
 
-    pub(crate) fn json_report(&self) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn json_report(&self) -> Result<(), Error> {
         if self.m_json_file == "" {
             return Ok(());
         }

@@ -1,6 +1,8 @@
+use super::fusion_scan::Error;
+
 use std::{
     borrow::Cow,
-    error::Error,
+    error,
     fs::File,
     io::{BufRead, BufReader, Read},
     path::Path,
@@ -31,7 +33,7 @@ impl FastqReader
     pub(crate) fn new(
         file_name: impl AsRef<Path>,
         has_quality: bool,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Error> {
         let file_name = file_name.as_ref();
 
         let (mut gzr, mut nr) = (None, None);
@@ -197,7 +199,7 @@ impl FastqReaderPair {
     pub(crate) fn from_paths(
         left_name: impl AsRef<Path>,
         right_name: impl AsRef<Path>,
-    ) -> Result<FastqReaderPair, Box<dyn Error>> {
+    ) -> Result<FastqReaderPair, Error> {
         Ok(Self {
             m_left: FastqReader::new(left_name, true)?,
             m_right: FastqReader::new(right_name, true)?,
@@ -227,7 +229,7 @@ mod test {
         nr: BufReader<File>,
     }
 
-    fn _var_init() -> Result<(), Box<dyn Error>> {
+    fn _var_init() -> Result<(), Error> {
         let file_name = PathBuf::from("testdata/R1.fq");
         let (gzr, nr);
         let m_zipped;

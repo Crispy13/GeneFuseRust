@@ -1,15 +1,12 @@
 use core::fmt;
 use std::{
-    collections::{hash_map::RandomState, BTreeMap, HashMap},
-    mem,
-    sync::{
-        atomic::{AtomicI32, Ordering},
-        Mutex,
-    },
+    collections::{hash_map::RandomState, BTreeMap, HashMap}, marker::PhantomData, mem, sync::{
+        atomic::{AtomicI32, Ordering}, Arc, Mutex
+    }
 };
 
 use genefuse::aux::int_hasher::{CPPTrivialHasherBuilder, FxHasherBuilder};
-use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
+use rayon::{iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator}, ThreadPool};
 
 use super::{common::GenePos, fasta_reader::FastaReader, sequence::Sequence};
 
@@ -32,32 +29,34 @@ impl MatchResult {
 const BLOOM_FILTER_LENGTH: usize = 1 << 29;
 const KMER: i32 = 16;
 
-pub(crate) struct Matcher<'f> {
+pub(crate) struct Matcher {
     pub(crate) m_kmer_positions: HashMap<u32, Vec<GenePos>, GFHasherBuilder>,
     pub(crate) m_contig_names: Vec<String>,
 
-    m_reference: Option<&'f mut FastaReader>,
+    m_reference: Option<Arc<FastaReader>>,
     m_unique_pos: i32,
     m_dupe_pos: i32,
     m_bloom_filter_array: Box<[u8]>,
+
 }
 
-impl<'f> Matcher<'f> {
+impl Matcher {
     pub(crate) fn from_ref_and_seqs(
-        fasta_ref: Option<&'f mut FastaReader>,
+        fasta_ref: Arc<FastaReader>,
         seqs: &[Sequence],
+        inner_thread_pool:&ThreadPool,
     ) -> Self {
         let mut matcher = Self {
             m_kmer_positions: HashMap::with_hasher(GFHasherBuilder::new()),
             m_contig_names: Vec::new(),
-            m_reference: fasta_ref,
+            m_reference: Some(fasta_ref),
             m_unique_pos: 0,
             m_dupe_pos: 0,
             m_bloom_filter_array: vec![0; BLOOM_FILTER_LENGTH].into_boxed_slice(),
         };
 
         matcher.init_bloom_filter(seqs);
-        matcher.make_index();
+        matcher.make_index(inner_thread_pool);
 
         matcher
     }
@@ -118,12 +117,13 @@ impl<'f> Matcher<'f> {
 
     // }
 
-    fn make_index(&mut self) {
+    fn make_index(&mut self, itp:&ThreadPool) {
         if self.m_reference.is_none() {
             return;
         }
 
-        let contig_ref = mem::take(&mut self.m_reference.as_mut().unwrap().m_all_contigs);
+        let contig_ref = &Arc::clone(self.m_reference.as_ref().unwrap()).m_all_contigs;
+        // let contig_ref = mem::take(&mut self.m_reference.as_mut().unwrap().m_all_contigs);
         let m_contig_names = Mutex::new(mem::take(&mut self.m_contig_names));
         let m_kmer_positions = Mutex::new(mem::take(&mut self.m_kmer_positions));
 
@@ -131,28 +131,31 @@ impl<'f> Matcher<'f> {
 
         log::debug!("indexing contig per ctg_name...");
         // let mut seq_cv= Vec::new();
-        contig_ref.iter().enumerate().par_bridge().for_each(|(ctg, e)| {
-            let (ctg_name, s) = (e.0.as_str(), e.1.as_str());
-            let seq_cv = s
-                .as_bytes()
-                .iter()
-                .copied()
-                .map(|b| b.to_ascii_uppercase())
-                .collect::<Vec<u8>>();
-            // let s = s.to_uppercase();
-            m_contig_names.lock().unwrap().push(ctg_name.to_owned());
-
-            //index forward
-            self.index_contig_bytes(ctg as i32, &seq_cv, 0, &m_kmer_positions);
-
-            //index reverse complement
-            // ctg.fetch_add(1, Ordering::Relaxed);
-            // seq_cv.clear();
+        itp.install(|| {
+            contig_ref.iter().enumerate().par_bridge().for_each(|(ctg, e)| {
+                let (ctg_name, s) = (e.0.as_str(), e.1.as_str());
+                let seq_cv = s
+                    .as_bytes()
+                    .iter()
+                    .copied()
+                    .map(|b| b.to_ascii_uppercase())
+                    .collect::<Vec<u8>>();
+                // let s = s.to_uppercase();
+                m_contig_names.lock().unwrap().push(ctg_name.to_owned());
+    
+                //index forward
+                self.index_contig_bytes(ctg as i32, &seq_cv, 0, &m_kmer_positions);
+    
+                //index reverse complement
+                // ctg.fetch_add(1, Ordering::Relaxed);
+                // seq_cv.clear();
+            });
         });
+        
 
         log::info!("matcher indexing done");
 
-        self.m_reference.as_mut().unwrap().m_all_contigs = contig_ref;
+        // self.m_reference.as_mut().unwrap().m_all_contigs = contig_ref;
         self.m_kmer_positions = m_kmer_positions.into_inner().unwrap();
         self.m_contig_names = m_contig_names.into_inner().unwrap();
     }

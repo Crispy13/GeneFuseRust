@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{
     cmp::Ordering,
-    error::Error,
+    error,
     fs::File,
     io::{BufWriter, Read, Write},
 };
@@ -9,8 +9,7 @@ use std::{
 use crate::utils::StringCPP;
 
 use super::{
-    common::GenePos,
-    read::{SequenceRead, SequenceReadPair},
+    common::GenePos, fusion_scan::Error, read::{SequenceRead, SequenceReadPair}
 };
 
 #[derive(PartialEq, Clone, Debug)]
@@ -77,7 +76,7 @@ impl ReadMatch {
         &self.m_read
     }
 
-    pub(crate) fn print_html_td(&self, f: &mut BufWriter<File>) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn print_html_td(&self, f: &mut BufWriter<File>) -> Result<(), Error> {
         // write!(f, "d:{}", self.m_distance)?;
 
         if self.m_reversed {
@@ -103,18 +102,18 @@ impl ReadMatch {
     pub(crate) fn print_reads_to_file(
         &self,
         f: &mut BufWriter<File>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         self.m_original_reads
             .iter()
             .map(|r| r.print_file(f))
-            .collect::<Result<(), Box<dyn Error>>>()
+            .collect::<Result<(), Error>>()
     }
 
     pub(crate) fn print_read_to_json(
         &self,
         f: &mut BufWriter<File>,
         pad: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         writeln!(f, "{}\"seq\":\"{}\",", pad, self.m_read.m_seq.m_str)?;
         writeln!(f, "{}\"qual\":\"{}\"", pad, self.m_read.m_quality)?;
 

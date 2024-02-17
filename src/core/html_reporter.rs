@@ -1,12 +1,12 @@
 use std::{
-    error::Error, fs::File, io::{BufWriter, Write}, ops::DerefMut
+    error, fs::File, io::{BufWriter, Write}, ops::DerefMut
 };
 
 use chrono::Local;
 
 use crate::{aux::global_settings::global_settings, genefuse::COMMAND};
 
-use super::{fusion_mapper::FusionMapper, fusion_result::FusionResult};
+use super::{fusion_mapper::FusionMapper, fusion_result::FusionResult, fusion_scan::Error};
 
 pub(crate) const FUSIONSCAN_VER: &str = env!("CARGO_PKG_VERSION");
 
@@ -22,7 +22,7 @@ impl<'f> HtmlReporter<'f>
     pub(crate) fn new(
         filename: String,
         mapper: &'f mut FusionMapper,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Error> {
         let m_file = BufWriter::new(File::create(&filename)?);
         Ok(Self {
             m_filename: filename,
@@ -36,7 +36,7 @@ impl<'f> HtmlReporter<'f>
         &self.m_fusion_mapper.m_fusion_results
     }
 
-    pub(crate) fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub(crate) fn run(&mut self) -> Result<(), Error> {
         log::debug!("printing header...");
         self.print_header()?;
         log::debug!("printing helper...");
@@ -49,7 +49,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_header(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_header(&mut self) -> Result<(), Error> {
         let f = &mut self.m_file;
 
         write!(
@@ -81,7 +81,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_css(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_css(&mut self) -> Result<(), Error> {
         let f = &mut self.m_file;
 
         write!(f, "<style type=\"text/css\">")?;
@@ -156,7 +156,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_js(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_js(&mut self) -> Result<(), Error> {
         let f = &mut self.m_file;
 
         write!(f, "<script type=\"text/javascript\">\n")?;
@@ -192,7 +192,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_footer(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_footer(&mut self) -> Result<(), Error> {
         let f = &mut self.m_file;
         write!(f, "<div id='footer'> ")?;
         write!(f, "<p>{}</p>", COMMAND.get().unwrap())?;
@@ -206,7 +206,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_helper(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_helper(&mut self) -> Result<(), Error> {
         let f = &mut self.m_file;
         write!(f, "<div id='helper'><p>Helpful tips:</p><ul>",)?;
         write!(f, "<li> Base color indicates quality: <font color='#78C6B9'>extremely high (Q40+)</font>, <font color='#33BBE2'>high (Q30~Q39) </font>, <font color='#666666'>moderate (Q20~Q29)</font>, <font color='#E99E5B'>low (Q15~Q19)</font>, <font color='#FF0000'>extremely low (0~Q14).</font> </li>",)?;
@@ -228,7 +228,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_fusions(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_fusions(&mut self) -> Result<(), Error> {
         // calculate the found fusion
         let found = self.m_fusion_results().len();
 
@@ -280,7 +280,7 @@ impl<'f> HtmlReporter<'f>
         id: i32,
         fusion: &mut FusionResult,
         f: &mut BufWriter<File>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         // let f = &mut self.m_file;
 
         
@@ -363,7 +363,7 @@ impl<'f> HtmlReporter<'f>
         Ok(())
     }
 
-    fn print_scan_targets(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_scan_targets(&mut self) -> Result<(), Error> {
         // original cpp code does nothing.
         Ok(())
     }
