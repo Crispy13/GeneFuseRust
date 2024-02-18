@@ -1,4 +1,6 @@
 # GeneFuse vRust
+A Rust ported GeneFuse with improved performance.  
+
 This program is a Rust porting version based on [**GeneFuse 0.8.0**](https://github.com/OpenGene/GeneFuse)
 
 
@@ -14,12 +16,19 @@ The command will make a binary in {repo_root}/target/release/genefuse
 ```
 target/release/genefuse
 ```
+<br>
 
-## Notes: Some modifications in this version.
+## Notes: Some modifications in this version
 - Added read name as a criteria to sort `Match` objects. (The original codes can yield different unique read count per run.)
 - It can accept **a file having a list of fusion csvs**. If you give it a file like that instead of a single csv, it outputs report files per fusion csv file.
 - Parallelized part of `matcher::makeIndex()` method to increase performance.
 - Some multi-threading codes were modified to be used in Rust.
+
+## Multiple csv path file Example
+```
+./EGFR_KRAS.csv
+./TP53_EGFR.csv
+```
 
 ## Performance test
 ```
