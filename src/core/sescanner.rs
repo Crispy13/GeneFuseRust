@@ -19,13 +19,13 @@ use super::{
 };
 
 #[derive(Debug)]
-struct ReadPack {
-    data: Vec<SequenceRead>,
+struct ReadPack<'s> {
+    data: Vec<&'s SequenceRead>,
     count: i32,
 }
 
-struct ReadRepository {
-    pack_buffer: ArrayQueue<ReadPack>,
+struct ReadRepository<'s> {
+    pack_buffer: ArrayQueue<ReadPack<'s>>,
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     read_counter: AtomicUsize,
@@ -41,11 +41,12 @@ pub(crate) struct SingleEndScanner<'s> {
     m_read1_file: String,
     m_html_file: String,
     m_json_file: String,
-    m_repo_o: Option<ReadRepository>,
+    m_repo_o: Option<ReadRepository<'s>>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
+    input_seq_pairs: Option<&'s [SequenceRead]>,
 }
 
 impl<'s> SingleEndScanner<'s> {
@@ -56,6 +57,7 @@ impl<'s> SingleEndScanner<'s> {
         html: String,
         json: String,
         thread_num: i32,
+        input_seq_pairs:Option<&'s [SequenceRead]>,
     ) -> Self {
         let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
 
@@ -70,12 +72,14 @@ impl<'s> SingleEndScanner<'s> {
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
             m_thread_pool: itp,
+            input_seq_pairs,
+
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
     }
 
-    fn m_repo(&self) -> &ReadRepository {
+    fn m_repo(&self) -> &ReadRepository<'s> {
         self.m_repo_o.as_ref().unwrap()
     }
 
@@ -140,11 +144,11 @@ impl<'s> SingleEndScanner<'s> {
         Ok(self._scan()?)
     }
 
-    fn push_match(&self, m: ReadMatch) {
+    fn push_match(&self, m: ReadMatch<'s>) {
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
     }
 
-    fn scan_single_end(&self, pack: ReadPack) -> Result<bool, Error> {
+    fn scan_single_end(&self, pack: ReadPack<'s>) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, r1) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -152,13 +156,13 @@ impl<'s> SingleEndScanner<'s> {
             let match_r1 = m_fusion_mapper.map_read(&r1, &mut mapable, 2, 20)?;
 
             if let Some(mut mr1) = match_r1 {
-                mr1.add_original_read(&r1);
+                mr1.add_original_read(r1);
                 self.push_match(mr1);
             } else if mapable {
                 let rcr1 = r1.reverse_complement();
                 let match_rcr1 = m_fusion_mapper.map_read(&rcr1, &mut mapable, 2, 20)?;
                 if let Some(mut mrcr1) = match_rcr1 {
-                    mrcr1.add_original_read(&r1);
+                    mrcr1.add_original_read(r1);
                     mrcr1.set_reversed(true);
                     self.push_match(mrcr1);
                 }
@@ -197,7 +201,7 @@ impl<'s> SingleEndScanner<'s> {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPack) -> Result<(), Error> {
+    fn produce_pack(&self, mut pack: ReadPack<'s>) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
 
         let m_repo = self.m_repo_o.as_ref().unwrap();
@@ -260,15 +264,18 @@ impl<'s> SingleEndScanner<'s> {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
-        let mut data = Vec::<SequenceRead>::with_capacity(PACK_SIZE as usize);
+        let mut data = Vec::<&SequenceRead>::with_capacity(PACK_SIZE as usize);
 
         let mut reader = FastqReader::new(&self.m_read1_file, true)?;
 
         let mut count = 0;
 
         let mut read;
+
+        let mut input_seq_pairs_iter = self.input_seq_pairs.as_ref().unwrap().iter();
         loop {
-            read = reader.read();
+            read = input_seq_pairs_iter.next();
+            // read = reader.read();
 
             if read.is_none() {
                 // the last pack
@@ -284,7 +291,7 @@ impl<'s> SingleEndScanner<'s> {
                 self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
-                data = Vec::<SequenceRead>::with_capacity(PACK_SIZE as usize);
+                data = Vec::<&SequenceRead>::with_capacity(PACK_SIZE as usize);
 
                 // reset count to 0
                 count = 0;

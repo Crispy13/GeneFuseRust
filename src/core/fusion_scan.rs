@@ -14,8 +14,7 @@ use rayon::{prelude::*, ThreadPoolBuilder};
 use crate::{
     aux::limited_bufreader::LimitedBufReader,
     core::{
-        fasta_reader::FastaReader,
-        sescanner::{self, SingleEndScanner},
+        fasta_reader::FastaReader, fastq_reader::{FastqReader, FastqReaderPair}, sescanner::{self, SingleEndScanner}
     },
 };
 
@@ -62,7 +61,28 @@ impl FusionScan {
         log::debug!("Reading reference, {}", &ref_file);
         m_reference.read_all();
 
+
         // read input seq fastqs
+        log::debug!("Reading input seqeunces...");
+        let (srp_vec, sr_vec) = if !self.m_read2_file.is_empty() {
+            let mut fqr = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
+            
+            let mut srp_vec = vec![];
+            while let Some(srp) = fqr.read() {
+                srp_vec.push(srp);
+            }
+
+            (Some(srp_vec), None)
+        } else {
+            let mut fqr = FastqReader::new(&self.m_read1_file, true)?;
+            
+            let mut sr_vec = vec![];
+            while let Some(srp) = fqr.read() {
+                sr_vec.push(srp);
+            }
+
+            (None, Some(sr_vec))
+        };
 
         let mut scanner_m_ref = ScannerFastaReader::new(m_reference);
 
@@ -102,6 +122,7 @@ impl FusionScan {
                             html_file,
                             json_file,
                             inner_thread_num as i32,
+                            srp_vec.as_ref().map(|v| v.as_slice()),
                         );
 
                         scanner_m_ref.scan_per_fusion_csv(pescanner)
@@ -113,6 +134,7 @@ impl FusionScan {
                             html_file,
                             json_file,
                             inner_thread_num as i32,
+                            sr_vec.as_ref().map(|v| v.as_slice()),
                         );
 
                         scanner_m_ref.scan_per_fusion_csv(sescanner)
@@ -227,6 +249,7 @@ impl FusionScan {
                 self.m_html_file,
                 self.m_json_file,
                 self.m_thread_num as i32,
+                None,
             );
 
             Ok(pescanner.scan()?)
@@ -238,6 +261,7 @@ impl FusionScan {
                 self.m_html_file,
                 self.m_json_file,
                 self.m_thread_num as i32,
+                None,
             );
 
             Ok(sescanner.scan()?)

@@ -96,7 +96,7 @@ impl<'s> FusionMapper<'s> {
         mapable: &mut bool,
         distance_req: i32,
         qual_req: i32,
-    ) -> Result<Option<ReadMatch>, Error> {
+    ) -> Result<Option<ReadMatch<'s>>, Error> {
         let mut mapping = self.m_indexer.map_read(r);
 
         // if r.m_name.contains(DBT) {
@@ -151,7 +151,7 @@ impl<'s> FusionMapper<'s> {
     //     self.m_indexer.get_ref_mut()
     // }
 
-    fn make_match(&self, r: &SequenceRead, mapping: &mut [SeqMatch]) -> Option<ReadMatch> {
+    fn make_match(&self, r: &SequenceRead, mapping: &mut [SeqMatch]) -> Option<ReadMatch<'s>> {
         if mapping.len() != 2 {
             return None;
         }
@@ -250,7 +250,7 @@ impl<'s> FusionMapper<'s> {
         edit_distance(&ss, ss.len(), &ref_str, ref_str.len()) as i32
     }
 
-    pub(crate) fn add_match(&self, m: ReadMatch) -> () {
+    pub(crate) fn add_match(&self, m: ReadMatch<'s>) -> () {
         let left_contig = m.m_left_gp.contig;
         let right_contig = m.m_right_gp.contig;
 

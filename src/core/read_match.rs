@@ -63,11 +63,11 @@ impl<'s> ReadMatch<'s> {
         self.m_reversed = flag;
     }
 
-    pub(crate) fn add_original_read(&mut self, r: &SequenceRead) {
+    pub(crate) fn add_original_read(&mut self, r: &'s SequenceRead) {
         self.m_original_reads.push(r);
     }
 
-    pub(crate) fn add_original_pair(&mut self, pair: &SequenceReadPair) -> () {
+    pub(crate) fn add_original_pair(&mut self, pair: &'s SequenceReadPair) -> () {
         self.m_original_reads.push(&pair.m_left);
         self.m_original_reads.push(&pair.m_right);
     }

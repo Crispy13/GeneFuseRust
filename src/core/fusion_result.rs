@@ -409,7 +409,7 @@ impl<'s> FusionResult<'s> {
         total_ed as i32
     }
 
-    pub(crate) fn add_match(&mut self, m: ReadMatch) {
+    pub(crate) fn add_match(&mut self, m: ReadMatch<'s>) {
         self.m_matches.push(m);
     }
 

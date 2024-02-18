@@ -11,17 +11,17 @@ use crate::genefuse::COMMAND;
 use super::fusion_scan::Error;
 use super::{fusion_mapper::FusionMapper, fusion_result::FusionResult};
 
-pub(crate) struct JsonReporter<'f> {
+pub(crate) struct JsonReporter<'f, 's> {
     m_filename: String,
-    m_fusion_mapper: &'f FusionMapper<'f>,
+    m_fusion_mapper: &'f FusionMapper<'s>,
     m_file: BufWriter<File>,
     // m_fusion_results: Vec<FusionResult>,
 }
 
-impl<'f> JsonReporter<'f>
+impl<'f, 's> JsonReporter<'f, 's>
 
 {
-    pub(crate) fn new(file_name:String, mapper:&'f FusionMapper) -> Result<Self, Error> {
+    pub(crate) fn new(file_name:String, mapper:&'f FusionMapper<'s>) -> Result<Self, Error> {
         let f = BufWriter::new(File::create(&file_name)?);
         Ok(Self {
             m_filename: file_name,

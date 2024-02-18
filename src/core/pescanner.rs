@@ -1,14 +1,8 @@
 use rayon::{prelude::*, ThreadPool, ThreadPoolBuilder};
 use std::{
-    error,
-    io::Write,
-    panic::Location,
-    process::exit,
-    sync::{
+    borrow::Borrow, error, io::Write, panic::Location, process::exit, sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering}, Arc, Condvar, Mutex, RwLock
-    },
-    thread::sleep,
-    time::Duration,
+    }, thread::sleep, time::Duration
 };
 
 use super::{
@@ -23,15 +17,15 @@ use crossbeam::queue::ArrayQueue;
 pub const DBT: &'static str = "@NB551106:59:HTFV3BGX2:4:22605:18628:10037";
 
 #[derive(Debug)]
-struct ReadPairPack {
-    data: Vec<SequenceReadPair>,
+struct ReadPairPack<'s> {
+    data: Vec<&'s SequenceReadPair>,
     count: i32,
 }
 
 // struct CPPConditionVariable {}
 
-struct ReadPairRepository {
-    pack_buffer: ArrayQueue<ReadPairPack>,
+struct ReadPairRepository<'s> {
+    pack_buffer: ArrayQueue<ReadPairPack<'s>>,
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     read_counter: AtomicUsize,
@@ -48,11 +42,12 @@ pub(crate) struct PairEndScanner<'s> {
     m_read2_file: String,
     m_html_file: String,
     m_json_file: String,
-    m_repo_o: Option<ReadPairRepository>,
+    m_repo_o: Option<ReadPairRepository<'s>>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
+    input_seq_pairs: Option<&'s [SequenceReadPair]>,
 }
 
 impl<'s> PairEndScanner<'s> {
@@ -64,6 +59,7 @@ impl<'s> PairEndScanner<'s> {
         html: String,
         json: String,
         thread_num: i32,
+        input_seq_pairs:Option<&'s [SequenceReadPair]>,
     ) -> Self {
         let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
 
@@ -79,6 +75,7 @@ impl<'s> PairEndScanner<'s> {
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
             m_thread_pool: itp,
+            input_seq_pairs,
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
@@ -92,7 +89,7 @@ impl<'s> PairEndScanner<'s> {
     //     self.m_fusion_mapper_o.as_mut().unwrap()
     // }
 
-    fn m_repo(&self) -> &ReadPairRepository {
+    fn m_repo(&self) -> &ReadPairRepository<'s> {
         self.m_repo_o.as_ref().unwrap()
     }
 
@@ -129,7 +126,7 @@ impl<'s> PairEndScanner<'s> {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPairPack) -> Result<(), Error> {
+    fn produce_pack(&self, mut pack: ReadPairPack<'s>) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
         // lock m_repo.mtx;
 
@@ -171,15 +168,18 @@ impl<'s> PairEndScanner<'s> {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
-        let mut data = Vec::<SequenceReadPair>::with_capacity(PACK_SIZE as usize);
+        let mut data = Vec::<&SequenceReadPair>::with_capacity(PACK_SIZE as usize);
 
         let mut reader = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
 
         let mut count = 0;
 
-        let mut read;
+        let mut read:Option<&SequenceReadPair>;
+
+        let mut input_seq_pairs_iter = self.input_seq_pairs.as_ref().unwrap().iter();
         loop {
-            read = reader.read();
+            read = input_seq_pairs_iter.next();
+            // read = reader.read();
 
             if read.is_none() {
                 // the last pack
@@ -195,7 +195,7 @@ impl<'s> PairEndScanner<'s> {
                 self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
-                data = Vec::<SequenceReadPair>::with_capacity(PACK_SIZE as usize);
+                data = Vec::<&SequenceReadPair>::with_capacity(PACK_SIZE as usize);
 
                 // reset count to 0
                 count = 0;
@@ -395,7 +395,7 @@ impl<'s> PairEndScanner<'s> {
         Ok(())
     }
 
-    fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Error> {
+    fn scan_pair_end(&self, pack: ReadPairPack<'s>) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, pair) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -424,7 +424,7 @@ impl<'s> PairEndScanner<'s> {
 
                 // log::debug!("match_merged={:?}", match_merged);
                 if let Some(mut mm) = match_merged {
-                    mm.add_original_pair(&pair);
+                    mm.add_original_pair(pair);
                     self.push_match(mm);
                 } else if mapable {
                     merged_rc = m.reverse_complement();
@@ -434,7 +434,7 @@ impl<'s> PairEndScanner<'s> {
                     //     log::debug!("match_merged_rc={:#?}", match_merged_rc);
                     // };
                     if let Some(mut mmr) = match_merged_rc {
-                        mmr.add_original_pair(&pair);
+                        mmr.add_original_pair(pair);
                         self.push_match(mmr);
                     }
                 }
@@ -447,7 +447,7 @@ impl<'s> PairEndScanner<'s> {
             //     log::debug!("match_r1={:#?}", match_r1);
             // };
             if let Some(mut mr1) = match_r1 {
-                mr1.add_original_pair(&pair);
+                mr1.add_original_pair(pair);
                 self.push_match(mr1);
             } else if mapable {
                 rcr1 = r1.reverse_complement();
@@ -456,7 +456,7 @@ impl<'s> PairEndScanner<'s> {
                 //     log::debug!("match_rcr1={:#?}", match_rcr1);
                 // };
                 if let Some(mut mrc1) = match_rcr1 {
-                    mrc1.add_original_pair(&pair);
+                    mrc1.add_original_pair(pair);
                     mrc1.set_reversed(true);
                     self.push_match(mrc1);
                 }
@@ -469,7 +469,7 @@ impl<'s> PairEndScanner<'s> {
             //     log::debug!("match_r2={:#?}", match_r2);
             // };
             if let Some(mut mr2) = match_r2 {
-                mr2.add_original_pair(&pair);
+                mr2.add_original_pair(pair);
                 self.push_match(mr2);
             } else if mapable {
                 rcr2 = r2.reverse_complement();
@@ -478,7 +478,7 @@ impl<'s> PairEndScanner<'s> {
                 //     log::debug!("match_rcr2={:#?}", match_rcr2);
                 // };
                 if let Some(mut mrc2) = match_rcr2 {
-                    mrc2.add_original_pair(&pair);
+                    mrc2.add_original_pair(pair);
                     mrc2.set_reversed(true);
                     self.push_match(mrc2);
                 }
@@ -488,7 +488,7 @@ impl<'s> PairEndScanner<'s> {
         Ok(true)
     }
     // #[track_caller]
-    fn push_match(&self, m: ReadMatch) {
+    fn push_match(&self, m: ReadMatch<'s>) {
         // lock(self.m_fusion_mtx);
 
         // if m.m_read.m_name.contains(DBT) {
@@ -513,6 +513,8 @@ impl<'s> PairEndScanner<'s> {
         if self.m_html_file == "" {
             return Ok(());
         }
+
+        // self.m_fusion_mapper_o.as_mut().unwrap();
         let mut reporter = HtmlReporter::new(
             self.m_html_file.clone(),
             self.m_fusion_mapper_o.as_mut().unwrap(),
