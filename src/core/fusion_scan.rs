@@ -14,7 +14,7 @@ use rayon::{prelude::*, ThreadPoolBuilder};
 use crate::{
     aux::limited_bufreader::LimitedBufReader,
     core::{
-        fasta_reader::FastaReader, fastq_reader::{FastqReader, FastqReaderPair}, sescanner::{self, SingleEndScanner}
+        fasta_reader::FastaReader, fastq_reader::{FastqReader, FastqReaderPair}, read::{SequenceReadCow, SequenceReadPairCow}, sescanner::{self, SingleEndScanner}
     },
 };
 
@@ -63,7 +63,7 @@ impl FusionScan {
 
 
         // read input seq fastqs
-        log::debug!("Reading input seqeunces...");
+        log::info!("Reading input seqeunces...");
         let (srp_vec, sr_vec) = if !self.m_read2_file.is_empty() {
             let mut fqr = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
             
@@ -83,6 +83,17 @@ impl FusionScan {
 
             (None, Some(sr_vec))
         };
+
+        // if let Some(s) = srp_vec {
+        //     let a = s.iter().cloned().map(SequenceReadPairCow::Owned).collect::<Vec<_>>();
+        //     let b = s.iter().map(SequenceReadPairCow::Borrowed).collect::<Vec<_>>();
+
+        //     let c = b.iter().map(|e| {
+        //         (SequenceReadCow::Owned(e.m_left.clone()), SequenceReadCow::Owned(e.m_right.clone()))
+        //     }).collect::<Vec<_>>();
+
+        //     exit(0);
+        // }
 
         let mut scanner_m_ref = ScannerFastaReader::new(m_reference);
 

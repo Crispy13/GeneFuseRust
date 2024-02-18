@@ -15,12 +15,12 @@ use crate::core::{
 };
 
 use super::{
-    fasta_reader::FastaReader, fusion_mapper::FusionMapper, fusion_scan::Error, html_reporter::HtmlReporter, json_reporter::JsonReporter, read::SequenceRead, read_match::ReadMatch
+    fasta_reader::FastaReader, fusion_mapper::FusionMapper, fusion_scan::Error, html_reporter::HtmlReporter, json_reporter::JsonReporter, read::{SequenceRead, SequenceReadCow}, read_match::ReadMatch
 };
 
 #[derive(Debug)]
 struct ReadPack<'s> {
-    data: Vec<&'s SequenceRead>,
+    data: Vec<SequenceReadCow<'s>>,
     count: i32,
 }
 
@@ -46,7 +46,7 @@ pub(crate) struct SingleEndScanner<'s> {
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
-    input_seq_pairs: Option<&'s [SequenceRead]>,
+    input_seqs: Option<&'s [SequenceRead]>,
 }
 
 impl<'s> SingleEndScanner<'s> {
@@ -72,7 +72,7 @@ impl<'s> SingleEndScanner<'s> {
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
             m_thread_pool: itp,
-            input_seq_pairs,
+            input_seqs: input_seq_pairs,
 
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
@@ -264,18 +264,19 @@ impl<'s> SingleEndScanner<'s> {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
-        let mut data = Vec::<&SequenceRead>::with_capacity(PACK_SIZE as usize);
 
-        let mut reader = FastqReader::new(&self.m_read1_file, true)?;
+        let mut data = Vec::<SequenceReadCow<'s>>::with_capacity(PACK_SIZE as usize);
+        let fastq_reader = FastqReader::new(&self.m_read1_file, true)?;
+
+        let mut reader = FastqReaderWrapper::new(self.input_seqs, Some(fastq_reader));
 
         let mut count = 0;
 
         let mut read;
 
-        let mut input_seq_pairs_iter = self.input_seq_pairs.as_ref().unwrap().iter();
         loop {
-            read = input_seq_pairs_iter.next();
-            // read = reader.read();
+            // read = input_seq_pairs_iter.next();
+            read = reader.read();
 
             if read.is_none() {
                 // the last pack
@@ -291,7 +292,7 @@ impl<'s> SingleEndScanner<'s> {
                 self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
-                data = Vec::<&SequenceRead>::with_capacity(PACK_SIZE as usize);
+                data = Vec::with_capacity(PACK_SIZE as usize);
 
                 // reset count to 0
                 count = 0;
@@ -407,4 +408,35 @@ impl<'s> SingleEndScanner<'s> {
     //         .m_reference
     //         .unwrap()
     // }
+}
+
+
+struct FastqReaderWrapper<'s> {
+    input_seq_pairs_iter: Option<std::slice::Iter<'s, SequenceRead>>,
+    fastq_reader_pair: Option<FastqReader>,
+}
+
+impl<'s> FastqReaderWrapper<'s> {
+    fn new(
+        input_seq_pairs: Option<&'s [SequenceRead]>,
+        fastq_reader_pair: Option<FastqReader>,
+    ) -> Self {
+        let input_seq_pairs_iter = input_seq_pairs.map(|v| v.iter());
+        Self {
+            input_seq_pairs_iter,
+            fastq_reader_pair,
+        }
+    }
+
+    fn read(&mut self) -> Option<SequenceReadCow<'s>> {
+        match self.input_seq_pairs_iter {
+            Some(ref mut v) => v.next().map(SequenceReadCow::Borrowed),
+            None => self
+                .fastq_reader_pair
+                .as_mut()
+                .unwrap()
+                .read()
+                .map(SequenceReadCow::Owned),
+        }
+    }
 }

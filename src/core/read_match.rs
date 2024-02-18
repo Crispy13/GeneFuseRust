@@ -9,13 +9,15 @@ use std::{
 use crate::utils::StringCPP;
 
 use super::{
-    common::GenePos, fusion_scan::Error, read::{SequenceRead, SequenceReadPair}
+    common::GenePos,
+    fusion_scan::Error,
+    read::{SequenceRead, SequenceReadCow, SequenceReadPair, SequenceReadPairCow},
 };
 
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) struct ReadMatch<'s> {
     pub(crate) m_read: SequenceRead,
-    pub(crate) m_original_reads: Vec<&'s SequenceRead>,
+    pub(crate) m_original_reads: Vec<SequenceReadCow<'s>>,
     pub(crate) m_overall_distance: i32,
     pub(crate) m_left_distance: i32,
     pub(crate) m_right_distance: i32,
@@ -63,13 +65,24 @@ impl<'s> ReadMatch<'s> {
         self.m_reversed = flag;
     }
 
-    pub(crate) fn add_original_read(&mut self, r: &'s SequenceRead) {
+    pub(crate) fn add_original_read(&mut self, r: SequenceReadCow<'s>) {
         self.m_original_reads.push(r);
     }
 
-    pub(crate) fn add_original_pair(&mut self, pair: &'s SequenceReadPair) -> () {
-        self.m_original_reads.push(&pair.m_left);
-        self.m_original_reads.push(&pair.m_right);
+    pub(crate) fn add_original_pair(&mut self, pair: SequenceReadPairCow<'s>) -> () {
+        let (p_m_left, p_m_right) = match pair {
+            SequenceReadPairCow::Borrowed(b) => (
+                SequenceReadCow::Borrowed(&b.m_left),
+                SequenceReadCow::Borrowed(&b.m_right),
+            ),
+            SequenceReadPairCow::Owned(o) => (
+                SequenceReadCow::Owned(o.m_left),
+                SequenceReadCow::Owned(o.m_right),
+            ),
+        };
+
+        self.m_original_reads.push(p_m_left);
+        self.m_original_reads.push(p_m_right);
     }
 
     pub(crate) fn get_read(&self) -> &SequenceRead {
@@ -99,10 +112,7 @@ impl<'s> ReadMatch<'s> {
         Ok(())
     }
 
-    pub(crate) fn print_reads_to_file(
-        &self,
-        f: &mut BufWriter<File>,
-    ) -> Result<(), Error> {
+    pub(crate) fn print_reads_to_file(&self, f: &mut BufWriter<File>) -> Result<(), Error> {
         self.m_original_reads
             .iter()
             .map(|r| r.print_file(f))
@@ -210,10 +220,23 @@ impl<'s> PartialOrd for ReadMatch<'s> {
             .len()
             .partial_cmp(&self.m_read.m_seq.m_str.len())
         {
-            Some(Ordering::Equal) => {},
+            Some(Ordering::Equal) => {}
             ord => return ord,
         }
 
         self.m_read.m_name.partial_cmp(&other.m_read.m_name) // added 240201, not in original cpp code.
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    
+    #[test]
+    fn check_enums() {
+        // let sp = SequenceReadPair::new(SequenceRead::new("ACGCGAGTA"), right)
+
+        // let s = SequenceReadPairCow::Borrowed()
     }
 }

@@ -1,12 +1,88 @@
+use std::borrow::{Borrow, Cow};
 use std::fmt::Write;
 use std::io::Write as iowrite;
+use std::ops::Deref;
 use std::{error, io::BufWriter};
+
+use crossbeam::epoch::Pointable;
 
 use super::fusion_scan::Error;
 
 use crate::utils::StringCPP;
 
 use super::sequence::{reverse_complement, Sequence};
+
+#[derive(Debug)]
+pub(crate) enum SequenceReadCow<'s> {
+    Borrowed(&'s SequenceRead),
+    Owned(SequenceRead),
+}
+
+impl<'s> Deref for SequenceReadCow<'s> {
+    type Target = SequenceRead;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Self::Borrowed(v) => v,
+            Self::Owned(ref v) => v,
+        }
+    }
+}
+
+impl<'s> PartialEq for SequenceReadCow<'s> {
+    fn eq(&self, other: &Self) -> bool {
+        PartialEq::eq(&**self, &**other)
+    }
+}
+
+impl<'s> Clone for SequenceReadCow<'s> {
+    fn clone(&self) -> Self {
+        match *self {
+            Self::Borrowed(b) => Self::Borrowed(b),
+            Self::Owned(ref o) => Self::Owned(o.to_owned()),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        match (self, source) {
+            (&mut Self::Owned(ref mut dest), &Self::Owned(ref o)) => o.clone_into(dest),
+            (t, s) => *t = s.clone(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum SequenceReadPairCow<'s> {
+    Borrowed(&'s SequenceReadPair),
+    Owned(SequenceReadPair),
+}
+
+impl<'s> Deref for SequenceReadPairCow<'s> {
+    type Target = SequenceReadPair;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Self::Borrowed(v) => v,
+            Self::Owned(ref v) => v,
+        }
+    }
+}
+
+impl<'s> Clone for SequenceReadPairCow<'s> {
+    fn clone(&self) -> Self {
+        match *self {
+            Self::Borrowed(b) => Self::Borrowed(b),
+            Self::Owned(ref o) => Self::Owned(o.to_owned()),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        match (self, source) {
+            (&mut Self::Owned(ref mut dest), &Self::Owned(ref o)) => o.clone_into(dest),
+            (t, s) => *t = s.clone(),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub(crate) struct SequenceRead {
@@ -89,7 +165,9 @@ impl SequenceRead {
     }
 
     fn make_string_with_breaks(origin: &str, breaks: &[i32]) -> String {
-        let mut ret = origin.subchars(0, *breaks.get(0).unwrap() as usize).to_string();
+        let mut ret = origin
+            .subchars(0, *breaks.get(0).unwrap() as usize)
+            .to_string();
 
         for i in (0..(breaks.len() - 1)) {
             write!(
@@ -124,9 +202,9 @@ impl SequenceRead {
             write!(
                 &mut ss,
                 "<a title='{}'><font color='{}'>{}</font></a>",
-                self.m_quality.get(i..(i+1)).unwrap(),
+                self.m_quality.get(i..(i + 1)).unwrap(),
                 quality_color(*self.m_quality.as_bytes().get(i).unwrap() as char),
-                self.m_seq.m_str.get(i..(i+1)).unwrap(),
+                self.m_seq.m_str.get(i..(i + 1)).unwrap(),
             )
             .unwrap();
         }
@@ -182,10 +260,7 @@ impl SequenceRead {
         SequenceRead::new(self.m_name.clone(), seq, strand, qual, true)
     }
 
-    pub(crate) fn print_file(
-        &self,
-        f: &mut BufWriter<std::fs::File>,
-    ) -> Result<(), Error> {
+    pub(crate) fn print_file(&self, f: &mut BufWriter<std::fs::File>) -> Result<(), Error> {
         writeln!(f, "{}", self.m_name)?;
         writeln!(f, "{}", self.m_seq.m_str)?;
         writeln!(f, "{}", self.m_strand)?;
