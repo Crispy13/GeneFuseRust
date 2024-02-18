@@ -5,7 +5,7 @@ use std::{
     }
 };
 
-use genefuse::aux::int_hasher::{CPPTrivialHasherBuilder, FxHasherBuilder};
+use crate::aux::int_hasher::{CPPTrivialHasherBuilder, FxHasherBuilder};
 use rayon::{iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator}, ThreadPool};
 
 use super::{common::GenePos, fasta_reader::FastaReader, sequence::Sequence};

@@ -1,6 +1,5 @@
-use core::fusion::Fusion;
-
 use argparse::set_configs;
+// use genefuse::genefuse;
 use genefuse::genefuse;
 
 mod argparse;

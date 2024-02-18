@@ -5,7 +5,7 @@ pub(crate) mod fastq_reader;
 pub(crate) mod fusion;
 pub(crate) mod fusion_mapper;
 pub(crate) mod fusion_result;
-pub(crate) mod fusion_scan;
+pub mod fusion_scan;
 pub(crate) mod gene;
 pub(crate) mod html_reporter;
 pub(crate) mod indexer;

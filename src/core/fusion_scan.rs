@@ -6,21 +6,27 @@ use std::{
     mem,
     path::{Path, PathBuf},
     process::exit,
-    sync::Arc,
+    sync::{Arc, OnceLock, RwLock}, time::Duration,
 };
 
 use rayon::{prelude::*, ThreadPoolBuilder};
 
 use crate::{
-    aux::limited_bufreader::LimitedBufReader,
+    aux::{limited_bufreader::LimitedBufReader, pbar::prepare_pbar_force},
     core::{
-        fasta_reader::FastaReader, fastq_reader::{FastqReader, FastqReaderPair}, read::{SequenceReadCow, SequenceReadPairCow}, sescanner::{self, SingleEndScanner}
+        fasta_reader::FastaReader,
+        fastq_reader::{FastqReader, FastqReaderPair},
+        read::{SequenceReadCow, SequenceReadPairCow},
+        sescanner::{self, SingleEndScanner},
     },
 };
 
 use super::{fusion::Fusion, pescanner::PairEndScanner};
 
 pub(crate) type Error = Box<dyn error::Error + Send + Sync>;
+
+pub(crate) static MULTI_CSV_MODE:OnceLock<bool> = OnceLock::new();
+
 pub(crate) struct FusionScan {
     m_fusion_file: String,
     m_read1_file: String,
@@ -61,12 +67,11 @@ impl FusionScan {
         log::debug!("Reading reference, {}", &ref_file);
         m_reference.read_all();
 
-
         // read input seq fastqs
         log::info!("Reading input seqeunces...");
         let (srp_vec, sr_vec) = if !self.m_read2_file.is_empty() {
             let mut fqr = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
-            
+
             let mut srp_vec = vec![];
             while let Some(srp) = fqr.read() {
                 srp_vec.push(srp);
@@ -75,7 +80,7 @@ impl FusionScan {
             (Some(srp_vec), None)
         } else {
             let mut fqr = FastqReader::new(&self.m_read1_file, true)?;
-            
+
             let mut sr_vec = vec![];
             while let Some(srp) = fqr.read() {
                 sr_vec.push(srp);
@@ -110,7 +115,12 @@ impl FusionScan {
             )
         };
 
-        log::info!("given csv count={}, parallel job count={}, inner_thread_num={}", fusion_csv_paths.len(), outer_thread_num, inner_thread_num);
+        log::info!(
+            "given csv count={}, parallel job count={}, inner_thread_num={}",
+            fusion_csv_paths.len(),
+            outer_thread_num,
+            inner_thread_num
+        );
 
         let tp = ThreadPoolBuilder::new()
             .num_threads(outer_thread_num)
@@ -118,7 +128,19 @@ impl FusionScan {
             .build()
             .unwrap();
 
-        tp.install(|| {
+        log::info!(
+            "Multi csv input mode enabled. Suppress all logging messages while doing jobs in parallel.",
+        );
+
+        // lower log max level.
+        let log_max_level = log::max_level();
+        log::set_max_level(log::LevelFilter::Off);
+
+        let pb = prepare_pbar_force(fusion_csv_paths.len() as u64);
+        pb.set_message("Scanning fusions given in csv...");
+        pb.enable_steady_tick(Duration::from_millis(125));
+
+        let scan_result = tp.install(|| {
             fusion_csv_paths
                 .into_iter()
                 .zip(html_file_paths.into_iter().zip(json_file_paths))
@@ -151,11 +173,18 @@ impl FusionScan {
                         scanner_m_ref.scan_per_fusion_csv(sescanner)
                     };
 
+                    pb.inc(1);
                     res
                 })
                 .collect::<Result<Vec<bool>, Error>>()
                 .and_then(|vb| Ok(vb.into_iter().all(|e| e)))
-        })
+        });
+
+        pb.finish();
+
+        log::set_max_level(log_max_level);
+
+        scan_result
     }
 
     fn get_report_names_from_fusion_csvs(
@@ -287,8 +316,16 @@ impl FusionScan {
             .to_str()
             .unwrap()
         {
-            "csv" => self.scan_single_csv(),
-            _ => self.scan_per_fusion_csv(),
+            "csv" => {
+                MULTI_CSV_MODE.get_or_init(|| false); // set MULTI_CSV_MODE flag.
+
+                self.scan_single_csv()
+            },
+            _ => {
+                MULTI_CSV_MODE.get_or_init(|| true);
+
+                self.scan_per_fusion_csv()
+            },
         }
     }
 }

@@ -12,7 +12,7 @@ use crate::{
         global_settings::global_settings,
         pbar::{prepare_pbar, PBSummary},
     },
-    core::{fusion, pescanner::DBT, sequence::Sequence},
+    core::{fusion, fusion_scan::MULTI_CSV_MODE, pescanner::DBT, sequence::Sequence},
     utils::{dis_connected_count, StringCPP},
 };
 
@@ -402,6 +402,8 @@ impl<'s> FusionMapper<'s> {
             "fusion_matches_len={}",
             self.fusion_matches.lock().unwrap().len()
         );
+
+        let multi_csv_mode = MULTI_CSV_MODE.get().unwrap().clone();
         for (i, fm) in (0..(self.m_fusion_match_size)).zip(
             self.fusion_matches
                 .lock()
@@ -469,7 +471,11 @@ impl<'s> FusionMapper<'s> {
                             continue;
                         }
                     }
-                    fr.print(&self.fusion_list);
+
+                    if !multi_csv_mode {
+                        fr.print(&self.fusion_list);
+                    }
+                    
                     self.m_fusion_results.push(fr);
                 }
             }

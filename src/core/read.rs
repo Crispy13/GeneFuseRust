@@ -20,7 +20,7 @@ pub(crate) enum SequenceReadCow<'s> {
 
 impl<'s> Deref for SequenceReadCow<'s> {
     type Target = SequenceRead;
-
+    
     fn deref(&self) -> &Self::Target {
         match *self {
             Self::Borrowed(v) => v,
