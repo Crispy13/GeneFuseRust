@@ -156,7 +156,7 @@ impl Indexer {
                 .unwrap()
                 .get((gene.m_start as usize)..(gene.m_end as usize))
                 .unwrap()
-                .to_uppercase();
+                .to_uppercase(); // mem usage?
 
             log::debug!("Indexing contig forward...",);
             //index forward
@@ -167,7 +167,7 @@ impl Indexer {
             let rev_comp_seq = reverse_complement(&s);
             self.index_contig(ctg, &rev_comp_seq, 1 - (s.len() as i32));
 
-            self.m_fusion_seq.push(s);
+            self.m_fusion_seq.push(s); // mem usage?
         }
 
         pbar.finish_and_clear();

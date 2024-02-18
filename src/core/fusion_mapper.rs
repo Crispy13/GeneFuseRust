@@ -12,7 +12,7 @@ use crate::{
         global_settings::global_settings,
         pbar::{prepare_pbar, PBSummary},
     },
-    core::{fusion, pescanner::DBT, sequence::Sequence},
+    core::{fusion, fusion_scan::MULTI_CSV_MODE, pescanner::DBT, sequence::Sequence},
     utils::{dis_connected_count, StringCPP},
 };
 
@@ -20,16 +20,16 @@ use super::{
     edit_distance::edit_distance, fasta_reader::FastaReader, fusion::Fusion, fusion_result::FusionResult, fusion_scan::Error, indexer::{Indexer, SeqMatch}, matcher::Matcher, read::SequenceRead, read_match::ReadMatch, sequence::reverse_complement
 };
 
-pub(crate) struct FusionMapper {
+pub(crate) struct FusionMapper<'s> {
     pub(crate) m_ref_file: String,
     pub(crate) m_fusion_match_size: i32,
     pub(crate) m_indexer: Indexer,
     pub(crate) fusion_list: Vec<Fusion>,
-    pub(crate) fusion_matches: Mutex<Vec<Vec<ReadMatch>>>,
-    pub(crate) m_fusion_results: Vec<FusionResult>,
+    pub(crate) fusion_matches: Mutex<Vec<Vec<ReadMatch<'s>>>>,
+    pub(crate) m_fusion_results: Vec<FusionResult<'s>>,
 }
 
-impl FusionMapper {
+impl<'s> FusionMapper<'s> {
     pub(crate) fn from_ref_and_fusion_files(
         ref_file: &str,
         fusion_file: &str,
@@ -96,7 +96,7 @@ impl FusionMapper {
         mapable: &mut bool,
         distance_req: i32,
         qual_req: i32,
-    ) -> Result<Option<ReadMatch>, Error> {
+    ) -> Result<Option<ReadMatch<'s>>, Error> {
         let mut mapping = self.m_indexer.map_read(r);
 
         // if r.m_name.contains(DBT) {
@@ -151,7 +151,7 @@ impl FusionMapper {
     //     self.m_indexer.get_ref_mut()
     // }
 
-    fn make_match(&self, r: &SequenceRead, mapping: &mut [SeqMatch]) -> Option<ReadMatch> {
+    fn make_match(&self, r: &SequenceRead, mapping: &mut [SeqMatch]) -> Option<ReadMatch<'s>> {
         if mapping.len() != 2 {
             return None;
         }
@@ -250,7 +250,7 @@ impl FusionMapper {
         edit_distance(&ss, ss.len(), &ref_str, ref_str.len()) as i32
     }
 
-    pub(crate) fn add_match(&self, m: ReadMatch) -> () {
+    pub(crate) fn add_match(&self, m: ReadMatch<'s>) -> () {
         let left_contig = m.m_left_gp.contig;
         let right_contig = m.m_right_gp.contig;
 
@@ -402,6 +402,8 @@ impl FusionMapper {
             "fusion_matches_len={}",
             self.fusion_matches.lock().unwrap().len()
         );
+
+        let multi_csv_mode = MULTI_CSV_MODE.get().unwrap().clone();
         for (i, fm) in (0..(self.m_fusion_match_size)).zip(
             self.fusion_matches
                 .lock()
@@ -469,7 +471,11 @@ impl FusionMapper {
                             continue;
                         }
                     }
-                    fr.print(&self.fusion_list);
+
+                    if !multi_csv_mode {
+                        fr.print(&self.fusion_list);
+                    }
+                    
                     self.m_fusion_results.push(fr);
                 }
             }

@@ -1,18 +1,26 @@
 use rayon::{prelude::*, ThreadPool, ThreadPoolBuilder};
 use std::{
+    borrow::Borrow,
     error,
     io::Write,
     panic::Location,
     process::exit,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering}, Arc, Condvar, Mutex, RwLock
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Condvar, Mutex, RwLock,
     },
     thread::sleep,
     time::Duration,
 };
 
 use super::{
-    common::{PACK_NUM_LIMIT, PACK_SIZE}, fasta_reader::{self, FastaReader}, fastq_reader::FastqReaderPair, fusion_mapper::FusionMapper, fusion_scan::Error, read::SequenceReadPair, read_match::ReadMatch
+    common::{PACK_NUM_LIMIT, PACK_SIZE},
+    fasta_reader::{self, FastaReader},
+    fastq_reader::FastqReaderPair,
+    fusion_mapper::FusionMapper,
+    fusion_scan::Error,
+    read::{SequenceReadPair, SequenceReadPairCow},
+    read_match::ReadMatch,
 };
 use crate::{
     core::{html_reporter::HtmlReporter, json_reporter::JsonReporter},
@@ -23,15 +31,15 @@ use crossbeam::queue::ArrayQueue;
 pub const DBT: &'static str = "@NB551106:59:HTFV3BGX2:4:22605:18628:10037";
 
 #[derive(Debug)]
-struct ReadPairPack {
-    data: Vec<SequenceReadPair>,
+struct ReadPairPack<'s> {
+    data: Vec<SequenceReadPairCow<'s>>,
     count: i32,
 }
 
 // struct CPPConditionVariable {}
 
-struct ReadPairRepository {
-    pack_buffer: ArrayQueue<ReadPairPack>,
+struct ReadPairRepository<'s> {
+    pack_buffer: ArrayQueue<ReadPairPack<'s>>,
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     read_counter: AtomicUsize,
@@ -41,21 +49,22 @@ struct ReadPairRepository {
     // repo_not_empty: Condvar,
 }
 
-pub(crate) struct PairEndScanner {
+pub(crate) struct PairEndScanner<'s> {
     m_fusion_file: String,
     m_ref_file: String,
     m_read1_file: String,
     m_read2_file: String,
     m_html_file: String,
     m_json_file: String,
-    m_repo_o: Option<ReadPairRepository>,
+    m_repo_o: Option<ReadPairRepository<'s>>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
-    m_fusion_mapper_o: Option<FusionMapper>,
+    m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
+    input_seq_pairs: Option<&'s [SequenceReadPair]>,
 }
 
-impl PairEndScanner {
+impl<'s> PairEndScanner<'s> {
     pub(crate) fn new(
         fusion_file: String,
         ref_file: String,
@@ -64,8 +73,12 @@ impl PairEndScanner {
         html: String,
         json: String,
         thread_num: i32,
+        input_seq_pairs: Option<&'s [SequenceReadPair]>,
     ) -> Self {
-        let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
+        let itp = ThreadPoolBuilder::new()
+            .num_threads(thread_num as usize)
+            .build()
+            .unwrap();
 
         Self {
             m_fusion_file: fusion_file,
@@ -79,6 +92,7 @@ impl PairEndScanner {
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
             m_thread_pool: itp,
+            input_seq_pairs,
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
@@ -92,7 +106,7 @@ impl PairEndScanner {
     //     self.m_fusion_mapper_o.as_mut().unwrap()
     // }
 
-    fn m_repo(&self) -> &ReadPairRepository {
+    fn m_repo(&self) -> &ReadPairRepository<'s> {
         self.m_repo_o.as_ref().unwrap()
     }
 
@@ -129,7 +143,7 @@ impl PairEndScanner {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPairPack) -> Result<(), Error> {
+    fn produce_pack(&self, mut pack: ReadPairPack<'s>) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
         // lock m_repo.mtx;
 
@@ -171,14 +185,18 @@ impl PairEndScanner {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
-        let mut data = Vec::<SequenceReadPair>::with_capacity(PACK_SIZE as usize);
+        let mut data = Vec::<SequenceReadPairCow<'s>>::with_capacity(PACK_SIZE as usize);
 
-        let mut reader = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
+        let mut fastq_reader = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
+
+        let mut reader = FastqReaderPairWrapper::new(self.input_seq_pairs, Some(fastq_reader));
 
         let mut count = 0;
 
         let mut read;
+
         loop {
+            // read = input_seq_pairs_iter.next();
             read = reader.read();
 
             if read.is_none() {
@@ -195,7 +213,7 @@ impl PairEndScanner {
                 self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
-                data = Vec::<SequenceReadPair>::with_capacity(PACK_SIZE as usize);
+                data = Vec::with_capacity(PACK_SIZE as usize);
 
                 // reset count to 0
                 count = 0;
@@ -220,7 +238,6 @@ impl PairEndScanner {
         while !self.m_repo_o.as_ref().unwrap().pack_buffer.is_empty() {
             self.consume_pack()?;
         }
-        
 
         Ok(())
     }
@@ -395,7 +412,7 @@ impl PairEndScanner {
         Ok(())
     }
 
-    fn scan_pair_end(&self, pack: ReadPairPack) -> Result<bool, Error> {
+    fn scan_pair_end(&self, pack: ReadPairPack<'s>) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, pair) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -488,7 +505,7 @@ impl PairEndScanner {
         Ok(true)
     }
     // #[track_caller]
-    fn push_match(&self, m: ReadMatch) {
+    fn push_match(&self, m: ReadMatch<'s>) {
         // lock(self.m_fusion_mtx);
 
         // if m.m_read.m_name.contains(DBT) {
@@ -513,6 +530,8 @@ impl PairEndScanner {
         if self.m_html_file == "" {
             return Ok(());
         }
+
+        // self.m_fusion_mapper_o.as_mut().unwrap();
         let mut reporter = HtmlReporter::new(
             self.m_html_file.clone(),
             self.m_fusion_mapper_o.as_mut().unwrap(),
@@ -535,6 +554,36 @@ impl PairEndScanner {
         reporter.run()?;
 
         Ok(())
+    }
+}
+
+struct FastqReaderPairWrapper<'s> {
+    input_seq_pairs_iter: Option<std::slice::Iter<'s, SequenceReadPair>>,
+    fastq_reader_pair: Option<FastqReaderPair>,
+}
+
+impl<'s> FastqReaderPairWrapper<'s> {
+    fn new(
+        input_seq_pairs: Option<&'s [SequenceReadPair]>,
+        fastq_reader_pair: Option<FastqReaderPair>,
+    ) -> Self {
+        let input_seq_pairs_iter = input_seq_pairs.map(|v| v.iter());
+        Self {
+            input_seq_pairs_iter,
+            fastq_reader_pair,
+        }
+    }
+
+    fn read(&mut self) -> Option<SequenceReadPairCow<'s>> {
+        match self.input_seq_pairs_iter {
+            Some(ref mut v) => v.next().map(SequenceReadPairCow::Borrowed),
+            None => self
+                .fastq_reader_pair
+                .as_mut()
+                .unwrap()
+                .read()
+                .map(SequenceReadPairCow::Owned),
+        }
     }
 }
 

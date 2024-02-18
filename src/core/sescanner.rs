@@ -15,17 +15,17 @@ use crate::core::{
 };
 
 use super::{
-    fasta_reader::FastaReader, fusion_mapper::FusionMapper, fusion_scan::Error, html_reporter::HtmlReporter, json_reporter::JsonReporter, read::SequenceRead, read_match::ReadMatch
+    fasta_reader::FastaReader, fusion_mapper::FusionMapper, fusion_scan::Error, html_reporter::HtmlReporter, json_reporter::JsonReporter, read::{SequenceRead, SequenceReadCow}, read_match::ReadMatch
 };
 
 #[derive(Debug)]
-struct ReadPack {
-    data: Vec<SequenceRead>,
+struct ReadPack<'s> {
+    data: Vec<SequenceReadCow<'s>>,
     count: i32,
 }
 
-struct ReadRepository {
-    pack_buffer: ArrayQueue<ReadPack>,
+struct ReadRepository<'s> {
+    pack_buffer: ArrayQueue<ReadPack<'s>>,
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     read_counter: AtomicUsize,
@@ -35,20 +35,21 @@ struct ReadRepository {
     // repo_not_empty: Condvar,
 }
 
-pub(crate) struct SingleEndScanner {
+pub(crate) struct SingleEndScanner<'s> {
     m_fusion_file: String,
     m_ref_file: String,
     m_read1_file: String,
     m_html_file: String,
     m_json_file: String,
-    m_repo_o: Option<ReadRepository>,
+    m_repo_o: Option<ReadRepository<'s>>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
-    m_fusion_mapper_o: Option<FusionMapper>,
+    m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: ThreadPool,
+    input_seqs: Option<&'s [SequenceRead]>,
 }
 
-impl SingleEndScanner {
+impl<'s> SingleEndScanner<'s> {
     pub(crate) fn new(
         fusion_file: String,
         ref_file: String,
@@ -56,6 +57,7 @@ impl SingleEndScanner {
         html: String,
         json: String,
         thread_num: i32,
+        input_seq_pairs:Option<&'s [SequenceRead]>,
     ) -> Self {
         let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
 
@@ -70,12 +72,14 @@ impl SingleEndScanner {
             m_thread_num: thread_num,
             m_fusion_mapper_o: None,
             m_thread_pool: itp,
+            input_seqs: input_seq_pairs,
+
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
     }
 
-    fn m_repo(&self) -> &ReadRepository {
+    fn m_repo(&self) -> &ReadRepository<'s> {
         self.m_repo_o.as_ref().unwrap()
     }
 
@@ -140,11 +144,11 @@ impl SingleEndScanner {
         Ok(self._scan()?)
     }
 
-    fn push_match(&self, m: ReadMatch) {
+    fn push_match(&self, m: ReadMatch<'s>) {
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
     }
 
-    fn scan_single_end(&self, pack: ReadPack) -> Result<bool, Error> {
+    fn scan_single_end(&self, pack: ReadPack<'s>) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, r1) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -152,13 +156,13 @@ impl SingleEndScanner {
             let match_r1 = m_fusion_mapper.map_read(&r1, &mut mapable, 2, 20)?;
 
             if let Some(mut mr1) = match_r1 {
-                mr1.add_original_read(r1.clone());
+                mr1.add_original_read(r1);
                 self.push_match(mr1);
             } else if mapable {
                 let rcr1 = r1.reverse_complement();
                 let match_rcr1 = m_fusion_mapper.map_read(&rcr1, &mut mapable, 2, 20)?;
                 if let Some(mut mrcr1) = match_rcr1 {
-                    mrcr1.add_original_read(r1.clone());
+                    mrcr1.add_original_read(r1);
                     mrcr1.set_reversed(true);
                     self.push_match(mrcr1);
                 }
@@ -197,7 +201,7 @@ impl SingleEndScanner {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPack) -> Result<(), Error> {
+    fn produce_pack(&self, mut pack: ReadPack<'s>) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
 
         let m_repo = self.m_repo_o.as_ref().unwrap();
@@ -260,14 +264,18 @@ impl SingleEndScanner {
         log::debug!("Entered producer_task()");
 
         let mut slept = 0;
-        let mut data = Vec::<SequenceRead>::with_capacity(PACK_SIZE as usize);
 
-        let mut reader = FastqReader::new(&self.m_read1_file, true)?;
+        let mut data = Vec::<SequenceReadCow<'s>>::with_capacity(PACK_SIZE as usize);
+        let fastq_reader = FastqReader::new(&self.m_read1_file, true)?;
+
+        let mut reader = FastqReaderWrapper::new(self.input_seqs, Some(fastq_reader));
 
         let mut count = 0;
 
         let mut read;
+
         loop {
+            // read = input_seq_pairs_iter.next();
             read = reader.read();
 
             if read.is_none() {
@@ -284,7 +292,7 @@ impl SingleEndScanner {
                 self.produce_pack(pack)?;
 
                 //re-initialize data for next pack
-                data = Vec::<SequenceRead>::with_capacity(PACK_SIZE as usize);
+                data = Vec::with_capacity(PACK_SIZE as usize);
 
                 // reset count to 0
                 count = 0;
@@ -400,4 +408,35 @@ impl SingleEndScanner {
     //         .m_reference
     //         .unwrap()
     // }
+}
+
+
+struct FastqReaderWrapper<'s> {
+    input_seq_pairs_iter: Option<std::slice::Iter<'s, SequenceRead>>,
+    fastq_reader_pair: Option<FastqReader>,
+}
+
+impl<'s> FastqReaderWrapper<'s> {
+    fn new(
+        input_seq_pairs: Option<&'s [SequenceRead]>,
+        fastq_reader_pair: Option<FastqReader>,
+    ) -> Self {
+        let input_seq_pairs_iter = input_seq_pairs.map(|v| v.iter());
+        Self {
+            input_seq_pairs_iter,
+            fastq_reader_pair,
+        }
+    }
+
+    fn read(&mut self) -> Option<SequenceReadCow<'s>> {
+        match self.input_seq_pairs_iter {
+            Some(ref mut v) => v.next().map(SequenceReadCow::Borrowed),
+            None => self
+                .fastq_reader_pair
+                .as_mut()
+                .unwrap()
+                .read()
+                .map(SequenceReadCow::Owned),
+        }
+    }
 }

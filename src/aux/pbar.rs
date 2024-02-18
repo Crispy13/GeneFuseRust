@@ -2,7 +2,24 @@ use std::fmt::Write;
 
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 
+use crate::core::fusion_scan::MULTI_CSV_MODE;
+
 pub fn prepare_pbar(len: u64) -> ProgressBar {
+    // will not use progress bar when in multi-csv-mode.
+    if *MULTI_CSV_MODE.get().unwrap() {
+        return ProgressBar::hidden();
+    }
+
+    _prepare_pbar(len)
+    
+}
+
+/// Make a progress bar ignoring suppresing conditions. (e.g. multi-csv-mode)
+pub(crate) fn prepare_pbar_force(len: u64) -> ProgressBar {
+    _prepare_pbar(len)
+}
+
+fn _prepare_pbar(len: u64) -> ProgressBar {
     let pb = ProgressBar::new(len);
     pb.set_draw_target(ProgressDrawTarget::stderr_with_hz(8));
 

@@ -9,13 +9,15 @@ use std::{
 use crate::utils::StringCPP;
 
 use super::{
-    common::GenePos, fusion_scan::Error, read::{SequenceRead, SequenceReadPair}
+    common::GenePos,
+    fusion_scan::Error,
+    read::{SequenceRead, SequenceReadCow, SequenceReadPair, SequenceReadPairCow},
 };
 
 #[derive(PartialEq, Clone, Debug)]
-pub(crate) struct ReadMatch {
+pub(crate) struct ReadMatch<'s> {
     pub(crate) m_read: SequenceRead,
-    pub(crate) m_original_reads: Vec<SequenceRead>,
+    pub(crate) m_original_reads: Vec<SequenceReadCow<'s>>,
     pub(crate) m_overall_distance: i32,
     pub(crate) m_left_distance: i32,
     pub(crate) m_right_distance: i32,
@@ -27,7 +29,7 @@ pub(crate) struct ReadMatch {
     pub(crate) m_right_gp: GenePos,
 }
 
-impl ReadMatch {
+impl<'s> ReadMatch<'s> {
     /// reversed = false, on default
     pub(crate) fn new(
         r: SequenceRead,
@@ -63,13 +65,24 @@ impl ReadMatch {
         self.m_reversed = flag;
     }
 
-    pub(crate) fn add_original_read(&mut self, r: SequenceRead) {
+    pub(crate) fn add_original_read(&mut self, r: SequenceReadCow<'s>) {
         self.m_original_reads.push(r);
     }
 
-    pub(crate) fn add_original_pair(&mut self, pair: SequenceReadPair) -> () {
-        self.m_original_reads.push(pair.m_left);
-        self.m_original_reads.push(pair.m_right);
+    pub(crate) fn add_original_pair(&mut self, pair: SequenceReadPairCow<'s>) -> () {
+        let (p_m_left, p_m_right) = match pair {
+            SequenceReadPairCow::Borrowed(b) => (
+                SequenceReadCow::Borrowed(&b.m_left),
+                SequenceReadCow::Borrowed(&b.m_right),
+            ),
+            SequenceReadPairCow::Owned(o) => (
+                SequenceReadCow::Owned(o.m_left),
+                SequenceReadCow::Owned(o.m_right),
+            ),
+        };
+
+        self.m_original_reads.push(p_m_left);
+        self.m_original_reads.push(p_m_right);
     }
 
     pub(crate) fn get_read(&self) -> &SequenceRead {
@@ -99,10 +112,7 @@ impl ReadMatch {
         Ok(())
     }
 
-    pub(crate) fn print_reads_to_file(
-        &self,
-        f: &mut BufWriter<File>,
-    ) -> Result<(), Error> {
+    pub(crate) fn print_reads_to_file(&self, f: &mut BufWriter<File>) -> Result<(), Error> {
         self.m_original_reads
             .iter()
             .map(|r| r.print_file(f))
@@ -157,7 +167,7 @@ impl ReadMatch {
     }
 }
 
-impl fmt::Display for ReadMatch {
+impl<'s> fmt::Display for ReadMatch<'s> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let dir_str = if self.m_reversed {
             ", read direction: reversed complement"
@@ -190,7 +200,7 @@ impl fmt::Display for ReadMatch {
     }
 }
 
-impl PartialOrd for ReadMatch {
+impl<'s> PartialOrd for ReadMatch<'s> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.m_read_break.partial_cmp(&other.m_read_break) {
             Some(Ordering::Equal) => {}
@@ -210,10 +220,23 @@ impl PartialOrd for ReadMatch {
             .len()
             .partial_cmp(&self.m_read.m_seq.m_str.len())
         {
-            Some(Ordering::Equal) => {},
+            Some(Ordering::Equal) => {}
             ord => return ord,
         }
 
         self.m_read.m_name.partial_cmp(&other.m_read.m_name) // added 240201, not in original cpp code.
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    
+    #[test]
+    fn check_enums() {
+        // let sp = SequenceReadPair::new(SequenceRead::new("ACGCGAGTA"), right)
+
+        // let s = SequenceReadPairCow::Borrowed()
     }
 }

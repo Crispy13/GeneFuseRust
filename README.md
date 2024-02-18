@@ -1,5 +1,5 @@
 # GeneFuse vRust
-This program is a Rust porting version based on [**GeneFuse 0.8.0**](https://github.com/OpenGene/GeneFuse) (original language: C++)
+This program is a Rust porting version based on [**GeneFuse 0.8.0**](https://github.com/OpenGene/GeneFuse)
 
 
 ## How to use: Build from source
