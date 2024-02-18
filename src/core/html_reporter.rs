@@ -63,8 +63,8 @@ impl<'f, 's> HtmlReporter<'f, 's>
             Local::now()
         )?;
 
-        self.print_js();
-        self.print_css();
+        self.print_js()?;
+        self.print_css()?;
 
         let f = &mut self.m_file;
 
