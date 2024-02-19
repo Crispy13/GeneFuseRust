@@ -273,7 +273,7 @@ impl<'s> FusionMapper<'s> {
             ),
         }
     }
-    pub(crate) fn filter_matches(&mut self, inner_thread_pool:&ThreadPool) -> () {
+    pub(crate) fn filter_matches(&mut self, inner_thread_pool:Option<&ThreadPool>) -> () {
         // calc the sequence number before any filtering
         // let mut total = 0;
         // for fm in self.fusion_matches.lock().unwrap().iter() {
@@ -485,7 +485,7 @@ impl<'s> FusionMapper<'s> {
         log::info!("found {} fusions", self.m_fusion_results.len(),);
     }
 
-    fn remove_alignables(&mut self, inner_thread_pool:&ThreadPool) -> () {
+    fn remove_alignables(&mut self, inner_thread_pool:Option<&ThreadPool>) -> () {
         if self.get_ref().is_none() {
             return;
         }

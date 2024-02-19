@@ -1,6 +1,9 @@
 use std::{
     error,
-    sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
     thread::sleep,
     time::Duration,
 };
@@ -15,7 +18,13 @@ use crate::core::{
 };
 
 use super::{
-    fasta_reader::FastaReader, fusion_mapper::FusionMapper, fusion_scan::Error, html_reporter::HtmlReporter, json_reporter::JsonReporter, read::{SequenceRead, SequenceReadCow}, read_match::ReadMatch
+    fasta_reader::FastaReader,
+    fusion_mapper::FusionMapper,
+    fusion_scan::Error,
+    html_reporter::HtmlReporter,
+    json_reporter::JsonReporter,
+    read::{SequenceRead, SequenceReadCow},
+    read_match::ReadMatch,
 };
 
 #[derive(Debug)]
@@ -45,7 +54,7 @@ pub(crate) struct SingleEndScanner<'s> {
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper<'s>>,
-    m_thread_pool: ThreadPool,
+    m_thread_pool: Option<ThreadPool>,
     input_seqs: Option<&'s [SequenceRead]>,
 }
 
@@ -57,9 +66,18 @@ impl<'s> SingleEndScanner<'s> {
         html: String,
         json: String,
         thread_num: i32,
-        input_seq_pairs:Option<&'s [SequenceRead]>,
+        input_seq_pairs: Option<&'s [SequenceRead]>,
     ) -> Self {
-        let itp = ThreadPoolBuilder::new().num_threads(thread_num as usize).build().unwrap();
+        let itp = if thread_num > 1 {
+            let tp = ThreadPoolBuilder::new()
+                .num_threads(thread_num as usize)
+                .build()
+                .unwrap();
+
+            Some(tp)
+        } else {
+            None
+        };
 
         Self {
             m_fusion_file: fusion_file,
@@ -73,7 +91,6 @@ impl<'s> SingleEndScanner<'s> {
             m_fusion_mapper_o: None,
             m_thread_pool: itp,
             input_seqs: input_seq_pairs,
-
             // repo_not_full: Condvar::new(),
             // repo_not_empty: Condvar::new(),
         }
@@ -84,15 +101,30 @@ impl<'s> SingleEndScanner<'s> {
     }
 
     fn _scan(&mut self) -> Result<bool, Error> {
-        self.m_thread_pool.scope(|tps| {
-            tps.spawn(|tps| self.producer_task().unwrap());
+        match self.m_thread_pool {
+            Some(ref itp) => {
+                itp.scope(|tps| {
+                    tps.spawn(|tps| self.producer_task().unwrap());
+        
+                    for t in (0..(rayon::current_num_threads() - 1)) {
+                        tps.spawn(|tps| {
+                            self.consumer_task().unwrap();
+                        })
+                    }
+                });
 
-            for t in (0..(rayon::current_num_threads() - 1)) {
-                tps.spawn(|tps| {
-                    self.consumer_task().unwrap();
-                })
-            }
-        });
+            },
+            None => self.producer_task().unwrap(),
+        }
+        // self.m_thread_pool.scope(|tps| {
+        //     tps.spawn(|tps| self.producer_task().unwrap());
+
+        //     for t in (0..(rayon::current_num_threads() - 1)) {
+        //         tps.spawn(|tps| {
+        //             self.consumer_task().unwrap();
+        //         })
+        //     }
+        // });
 
         log::debug!("Produced and consumed all the tasks.");
         let m_fusion_mapper = self.m_fusion_mapper_o.as_mut().unwrap();
@@ -116,7 +148,7 @@ impl<'s> SingleEndScanner<'s> {
         // exit(0);
 
         log::debug!("run matches methods...");
-        m_fusion_mapper.filter_matches(&self.m_thread_pool);
+        m_fusion_mapper.filter_matches(self.m_thread_pool.as_ref());
         m_fusion_mapper.sort_matches();
         m_fusion_mapper.cluster_matches();
 
@@ -409,7 +441,6 @@ impl<'s> SingleEndScanner<'s> {
     //         .unwrap()
     // }
 }
-
 
 struct FastqReaderWrapper<'s> {
     input_seq_pairs_iter: Option<std::slice::Iter<'s, SequenceRead>>,

@@ -100,7 +100,7 @@ impl FusionScan {
         //     exit(0);
         // }
 
-        let mut scanner_m_ref = ScannerFastaReader::new(m_reference);
+        let scanner_m_ref = ScannerFastaReader::new(m_reference);
 
         let fusion_csv_paths = self.get_fusion_csv_vec_from_input()?;
         let (html_file_paths, json_file_paths) =

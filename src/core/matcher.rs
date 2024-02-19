@@ -44,7 +44,7 @@ impl Matcher {
     pub(crate) fn from_ref_and_seqs(
         fasta_ref: Arc<FastaReader>,
         seqs: &[Sequence],
-        inner_thread_pool:&ThreadPool,
+        inner_thread_pool:Option<&ThreadPool>,
     ) -> Self {
         let mut matcher = Self {
             m_kmer_positions: HashMap::with_hasher(GFHasherBuilder::new()),
@@ -117,7 +117,7 @@ impl Matcher {
 
     // }
 
-    fn make_index(&mut self, itp:&ThreadPool) {
+    fn make_index(&mut self, itp:Option<&ThreadPool>) {
         if self.m_reference.is_none() {
             return;
         }
@@ -131,26 +131,34 @@ impl Matcher {
 
         log::debug!("indexing contig per ctg_name...");
         // let mut seq_cv= Vec::new();
-        itp.install(|| {
-            contig_ref.iter().enumerate().par_bridge().for_each(|(ctg, e)| {
-                let (ctg_name, s) = (e.0.as_str(), e.1.as_str());
-                let seq_cv = s
-                    .as_bytes()
-                    .iter()
-                    .copied()
-                    .map(|b| b.to_ascii_uppercase())
-                    .collect::<Vec<u8>>();
-                // let s = s.to_uppercase();
-                m_contig_names.lock().unwrap().push(ctg_name.to_owned());
-    
-                //index forward
-                self.index_contig_bytes(ctg as i32, &seq_cv, 0, &m_kmer_positions);
-    
-                //index reverse complement
-                // ctg.fetch_add(1, Ordering::Relaxed);
-                // seq_cv.clear();
-            });
-        });
+
+        let do_index_contig = |(ctg, e):(usize, (&String, &String))| {
+            let (ctg_name, s) = (e.0.as_str(), e.1.as_str());
+            let seq_cv = s
+                .as_bytes()
+                .iter()
+                .copied()
+                .map(|b| b.to_ascii_uppercase())
+                .collect::<Vec<u8>>();
+            // let s = s.to_uppercase();
+            m_contig_names.lock().unwrap().push(ctg_name.to_owned());
+
+            //index forward
+            self.index_contig_bytes(ctg as i32, &seq_cv, 0, &m_kmer_positions);
+
+            //index reverse complement
+            // ctg.fetch_add(1, Ordering::Relaxed);
+            // seq_cv.clear();
+        };
+
+        match itp{
+            Some(itp) => {
+                itp.install(|| {
+                    contig_ref.iter().enumerate().par_bridge().for_each(do_index_contig);
+                });
+            },
+            None => contig_ref.iter().enumerate().for_each(do_index_contig),
+        };
         
 
         log::info!("matcher indexing done");

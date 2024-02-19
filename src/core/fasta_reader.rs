@@ -15,7 +15,7 @@ use crate::aux::he::{
     make_custom_error, make_custom_error3, make_custom_error4, ErrorExplained, OrExaplain,
 };
 use crate::aux::limited_bufreader::LimitedBufReader;
-use crate::aux::pbar::prepare_pbar;
+use crate::aux::pbar::{prepare_pbar, prepare_pbar_force};
 
 use super::fusion_scan::Error;
 
@@ -191,7 +191,7 @@ impl FastaReader {
     }
 
     pub(crate) fn read_all(&mut self) {
-        let pbar = prepare_pbar(0);
+        let pbar = prepare_pbar_force(0);
         pbar.set_message("Reading references...");
         while self.read_next() {
             pbar.inc(1);

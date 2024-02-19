@@ -60,7 +60,7 @@ pub(crate) struct PairEndScanner<'s> {
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper<'s>>,
-    m_thread_pool: ThreadPool,
+    m_thread_pool: Option<ThreadPool>,
     input_seq_pairs: Option<&'s [SequenceReadPair]>,
 }
 
@@ -75,10 +75,16 @@ impl<'s> PairEndScanner<'s> {
         thread_num: i32,
         input_seq_pairs: Option<&'s [SequenceReadPair]>,
     ) -> Self {
-        let itp = ThreadPoolBuilder::new()
-            .num_threads(thread_num as usize)
-            .build()
-            .unwrap();
+        let itp = if thread_num > 1 {
+            let tp = ThreadPoolBuilder::new()
+                .num_threads(thread_num as usize)
+                .build()
+                .unwrap();
+
+            Some(tp)
+        } else {
+            None
+        };
 
         Self {
             m_fusion_file: fusion_file,
@@ -288,15 +294,21 @@ impl<'s> PairEndScanner<'s> {
     }
 
     fn _scan(&mut self) -> Result<bool, Error> {
-        self.m_thread_pool.scope(|tps| {
-            tps.spawn(|tps| self.producer_task().unwrap());
+        match self.m_thread_pool {
+            Some(ref itp) => {
+                itp.scope(|tps| {
+                    tps.spawn(|tps| self.producer_task().unwrap());
+        
+                    for t in (0..(rayon::current_num_threads() - 1)) {
+                        tps.spawn(|tps| {
+                            self.consumer_task().unwrap();
+                        })
+                    }
+                });
 
-            for t in (0..(rayon::current_num_threads() - 1)) {
-                tps.spawn(|tps| {
-                    self.consumer_task().unwrap();
-                })
-            }
-        });
+            },
+            None => self.producer_task().unwrap(),
+        }
 
         log::debug!("Produced and consumed all the tasks.");
         let m_fusion_mapper = self.m_fusion_mapper_o.as_mut().unwrap();
@@ -320,7 +332,7 @@ impl<'s> PairEndScanner<'s> {
         // exit(0);
 
         log::debug!("run matches methods...");
-        m_fusion_mapper.filter_matches(&self.m_thread_pool);
+        m_fusion_mapper.filter_matches(self.m_thread_pool.as_ref());
         m_fusion_mapper.sort_matches();
         m_fusion_mapper.cluster_matches();
 
