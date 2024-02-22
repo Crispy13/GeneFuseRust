@@ -24,25 +24,17 @@ target/release/genefuse
 - Parallelized part of `matcher::makeIndex()` method to increase performance.
 - Some multi-threading codes were modified to be used in Rust.
 
+
+## Performance test
+* In a test, this version's running time was ~7.4x and it used 105% memory.
+* [**Details**](./benchmark_res/bench_res.md)
+
+
 ## Multiple csv path file Example
 ```
 ./EGFR_KRAS.csv
 ./TP53_EGFR.csv
 ```
-
-## Performance test
-```
-genefuse \
-    -r hg38.fa \
-    -f genes/druggable.hg38.csv \
-    -1 genefuse.R1.fq \
-    -2 genefuse.R2.fq \
-    -h report.html \
-    -j report.json \
-    -t 4
-```
-In a tiny test which ran genefuse 10 times with the above options,  
-This version's speed was about **4.5x faster** on my machine. \[Rust:159s, Original:709s\] (WSL2 Ubuntu, Ryzen 5800x).
 
 
 #### For more information about this program, please see [**the original repository**](https://github.com/OpenGene/GeneFuse).
