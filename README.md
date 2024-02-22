@@ -26,7 +26,7 @@ target/release/genefuse
 
 
 ## Performance test
-* In a test, this version's running time was ~7.4x and it used 105% memory.
+* In a test, this version's running time was **6.62x** and it used **105% memory**.
 * [**Details**](./benchmark_res/bench_res.md)
 
 
