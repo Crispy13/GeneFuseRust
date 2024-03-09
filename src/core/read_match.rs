@@ -1,9 +1,6 @@
 use core::fmt;
 use std::{
-    cmp::Ordering,
-    error,
-    fs::File,
-    io::{BufWriter, Read, Write},
+    cmp::Ordering, error, fs::File, io::{BufWriter, Read, Write}, marker::PhantomData, sync::Arc
 };
 
 use crate::utils::StringCPP;
@@ -11,13 +8,13 @@ use crate::utils::StringCPP;
 use super::{
     common::GenePos,
     fusion_scan::Error,
-    read::{SequenceRead, SequenceReadCow, SequenceReadPair, SequenceReadPairCow},
+    read::{SequenceRead, SequenceReadCow, SequenceReadPair, SequenceReadPairArc, SequenceReadPairCow},
 };
 
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) struct ReadMatch<'s> {
     pub(crate) m_read: SequenceRead,
-    pub(crate) m_original_reads: Vec<SequenceReadCow<'s>>,
+    pub(crate) m_original_reads: Vec<Arc<SequenceRead>>,
     pub(crate) m_overall_distance: i32,
     pub(crate) m_left_distance: i32,
     pub(crate) m_right_distance: i32,
@@ -27,6 +24,8 @@ pub(crate) struct ReadMatch<'s> {
     pub(crate) m_read_break: i32,
     pub(crate) m_left_gp: GenePos,
     pub(crate) m_right_gp: GenePos,
+
+    phantom_data: PhantomData<&'s str>,
 }
 
 impl<'s> ReadMatch<'s> {
@@ -50,6 +49,7 @@ impl<'s> ReadMatch<'s> {
             m_read_break: read_break,
             m_left_gp: left_gp,
             m_right_gp: right_gp,
+            phantom_data: PhantomData,
         }
     }
 
@@ -65,24 +65,24 @@ impl<'s> ReadMatch<'s> {
         self.m_reversed = flag;
     }
 
-    pub(crate) fn add_original_read(&mut self, r: SequenceReadCow<'s>) {
+    pub(crate) fn add_original_read(&mut self, r: Arc<SequenceRead>) {
         self.m_original_reads.push(r);
     }
 
-    pub(crate) fn add_original_pair(&mut self, pair: SequenceReadPairCow<'s>) -> () {
-        let (p_m_left, p_m_right) = match pair {
-            SequenceReadPairCow::Borrowed(b) => (
-                SequenceReadCow::Borrowed(&b.m_left),
-                SequenceReadCow::Borrowed(&b.m_right),
-            ),
-            SequenceReadPairCow::Owned(o) => (
-                SequenceReadCow::Owned(o.m_left),
-                SequenceReadCow::Owned(o.m_right),
-            ),
-        };
+    pub(crate) fn add_original_pair(&mut self, pair: &SequenceReadPairArc) -> () {
+        // let (p_m_left, p_m_right) = match pair {
+        //     SequenceReadPairCow::Borrowed(b) => (
+        //         SequenceReadCow::Borrowed(&b.m_left),
+        //         SequenceReadCow::Borrowed(&b.m_right),
+        //     ),
+        //     SequenceReadPairCow::Owned(o) => (
+        //         SequenceReadCow::Owned(o.m_left),
+        //         SequenceReadCow::Owned(o.m_right),
+        //     ),
+        // };
 
-        self.m_original_reads.push(p_m_left);
-        self.m_original_reads.push(p_m_right);
+        self.m_original_reads.push(Arc::clone(&pair.m_left));
+        self.m_original_reads.push(Arc::clone(&pair.m_right));
     }
 
     pub(crate) fn get_read(&self) -> &SequenceRead {

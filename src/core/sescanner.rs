@@ -28,13 +28,13 @@ use super::{
 };
 
 #[derive(Debug)]
-struct ReadPack<'s> {
-    data: Vec<SequenceReadCow<'s>>,
+struct ReadPack {
+    data: Vec<Arc<SequenceRead>>,
     count: i32,
 }
 
-struct ReadRepository<'s> {
-    pack_buffer: ArrayQueue<ReadPack<'s>>,
+struct ReadRepository {
+    pack_buffer: ArrayQueue<ReadPack>,
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     read_counter: AtomicUsize,
@@ -50,12 +50,12 @@ pub(crate) struct SingleEndScanner<'s> {
     m_read1_file: String,
     m_html_file: String,
     m_json_file: String,
-    m_repo_o: Option<ReadRepository<'s>>,
+    m_repo_o: Option<ReadRepository>,
     m_produce_finished: AtomicBool,
     m_thread_num: i32,
     m_fusion_mapper_o: Option<FusionMapper<'s>>,
     m_thread_pool: Option<ThreadPool>,
-    input_seqs: Option<&'s [SequenceRead]>,
+    input_seqs: Option<&'s [Arc<SequenceRead>]>,
 }
 
 impl<'s> SingleEndScanner<'s> {
@@ -66,7 +66,7 @@ impl<'s> SingleEndScanner<'s> {
         html: String,
         json: String,
         thread_num: i32,
-        input_seq_pairs: Option<&'s [SequenceRead]>,
+        input_seq_pairs: Option<&'s [Arc<SequenceRead>]>,
     ) -> Self {
         let itp = if thread_num > 1 {
             let tp = ThreadPoolBuilder::new()
@@ -96,7 +96,7 @@ impl<'s> SingleEndScanner<'s> {
         }
     }
 
-    fn m_repo(&self) -> &ReadRepository<'s> {
+    fn m_repo(&self) -> &ReadRepository {
         self.m_repo_o.as_ref().unwrap()
     }
 
@@ -180,7 +180,7 @@ impl<'s> SingleEndScanner<'s> {
         self.m_fusion_mapper_o.as_ref().unwrap().add_match(m);
     }
 
-    fn scan_single_end(&self, pack: ReadPack<'s>) -> Result<bool, Error> {
+    fn scan_single_end(&self, pack: ReadPack) -> Result<bool, Error> {
         let m_fusion_mapper = self.m_fusion_mapper_o.as_ref().unwrap();
 
         for (p, r1) in (0..(pack.count as usize)).zip(pack.data.into_iter()) {
@@ -233,7 +233,7 @@ impl<'s> SingleEndScanner<'s> {
         }
     }
 
-    fn produce_pack(&self, mut pack: ReadPack<'s>) -> Result<(), Error> {
+    fn produce_pack(&self, mut pack: ReadPack) -> Result<(), Error> {
         log::debug!("Entered produce_pack()");
 
         let m_repo = self.m_repo_o.as_ref().unwrap();
@@ -297,7 +297,7 @@ impl<'s> SingleEndScanner<'s> {
 
         let mut slept = 0;
 
-        let mut data = Vec::<SequenceReadCow<'s>>::with_capacity(PACK_SIZE as usize);
+        let mut data = Vec::<Arc<SequenceRead>>::with_capacity(PACK_SIZE as usize);
         let fastq_reader = FastqReader::new(&self.m_read1_file, true)?;
 
         let mut reader = FastqReaderWrapper::new(self.input_seqs, Some(fastq_reader));
@@ -443,13 +443,13 @@ impl<'s> SingleEndScanner<'s> {
 }
 
 struct FastqReaderWrapper<'s> {
-    input_seq_pairs_iter: Option<std::slice::Iter<'s, SequenceRead>>,
+    input_seq_pairs_iter: Option<std::slice::Iter<'s, Arc<SequenceRead>>>,
     fastq_reader_pair: Option<FastqReader>,
 }
 
 impl<'s> FastqReaderWrapper<'s> {
     fn new(
-        input_seq_pairs: Option<&'s [SequenceRead]>,
+        input_seq_pairs: Option<&'s [Arc<SequenceRead>]>,
         fastq_reader_pair: Option<FastqReader>,
     ) -> Self {
         let input_seq_pairs_iter = input_seq_pairs.map(|v| v.iter());
@@ -459,15 +459,15 @@ impl<'s> FastqReaderWrapper<'s> {
         }
     }
 
-    fn read(&mut self) -> Option<SequenceReadCow<'s>> {
+    fn read(&mut self) -> Option<Arc<SequenceRead>> {
         match self.input_seq_pairs_iter {
-            Some(ref mut v) => v.next().map(SequenceReadCow::Borrowed),
+            Some(ref mut v) => v.next().map(Arc::clone),
             None => self
                 .fastq_reader_pair
                 .as_mut()
                 .unwrap()
                 .read()
-                .map(SequenceReadCow::Owned),
+                .map(Arc::new),
         }
     }
 }

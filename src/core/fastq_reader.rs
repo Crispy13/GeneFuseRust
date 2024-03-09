@@ -1,4 +1,4 @@
-use super::fusion_scan::Error;
+use super::{fusion_scan::Error, read::SequenceReadPairArc};
 
 use std::{
     borrow::Cow,
@@ -215,6 +215,10 @@ impl FastqReaderPair {
         } else {
             Some(SequenceReadPair::new(l.unwrap(), r.unwrap()))
         }
+    }
+
+    pub(crate) fn read_and_into_arc(&mut self) -> Option<SequenceReadPairArc> {
+        self.read().and_then(|sp| Some(SequenceReadPairArc::from_seq_read_pair(sp)))
     }
 }
 

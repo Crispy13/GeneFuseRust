@@ -2,6 +2,7 @@ use std::borrow::{Borrow, Cow};
 use std::fmt::Write;
 use std::io::Write as iowrite;
 use std::ops::Deref;
+use std::sync::Arc;
 use std::{error, io::BufWriter};
 
 use crossbeam::epoch::Pointable;
@@ -20,7 +21,7 @@ pub(crate) enum SequenceReadCow<'s> {
 
 impl<'s> Deref for SequenceReadCow<'s> {
     type Target = SequenceRead;
-    
+
     fn deref(&self) -> &Self::Target {
         match *self {
             Self::Borrowed(v) => v,
@@ -50,6 +51,7 @@ impl<'s> Clone for SequenceReadCow<'s> {
         }
     }
 }
+
 
 #[derive(Debug)]
 pub(crate) enum SequenceReadPairCow<'s> {
@@ -296,6 +298,40 @@ fn quality_color(qual: char) -> &'static str {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct SequenceReadPairArc {
+    pub(crate) m_left: Arc<SequenceRead>,
+    pub(crate) m_right: Arc<SequenceRead>,
+}
+
+impl SequenceReadPairArc {
+    pub(crate) fn new(left: Arc<SequenceRead>, right: Arc<SequenceRead>) -> Self {
+        Self {
+            m_left: left,
+            m_right: right,
+        }
+    }
+    pub(crate) fn from_seq_read_pair(seq_read_pair: SequenceReadPair) -> Self {
+        Self {
+            m_left: Arc::new(seq_read_pair.m_left),
+            m_right: Arc::new(seq_read_pair.m_right),
+        }
+    }
+}
+
+impl Clone for SequenceReadPairArc {
+    fn clone(&self) -> Self {
+        Self {
+            m_left: Arc::clone(&self.m_left),
+            m_right: Arc::clone(&self.m_right),
+        }
+    }
+}
+
+impl SequenceReadPairExt for SequenceReadPairArc {
+    impl_sequence_read_pair_ext!(self, self);
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct SequenceReadPair {
     pub(crate) m_left: SequenceRead,
@@ -309,135 +345,149 @@ impl SequenceReadPair {
             m_right: right,
         }
     }
+}
 
-    pub(crate) fn fast_merge(&self) -> Option<SequenceRead> {
-        let rc_right = self.m_right.reverse_complement();
-        let len1 = self.m_left.len();
-        let len2 = self.m_right.len();
 
-        // use the pointer directly for speed
-        let str1 = self.m_left.m_seq.m_str.as_str();
-        let str2 = rc_right.m_seq.m_str.as_str();
-        let qual1 = self.m_left.m_quality.as_str();
-        let qual2 = rc_right.m_quality.as_str();
-
-        // we require at least 30 bp overlapping to merge a pair
-        const MIN_OVERLAP: i32 = 30;
-
-        let mut overlapped = false;
-        let mut olen = MIN_OVERLAP;
-        let mut diff = 0;
-
-        // the diff count for 1 high qual + 1 low qual
-        let mut low_qual_diff = 0;
-
-        let str1_cv = str1.chars().collect::<Vec<char>>();
-        let str2_cv = str2.chars().collect::<Vec<char>>();
-        let qual1_cv = qual1.chars().collect::<Vec<char>>();
-        let qual2_cv = qual2.chars().collect::<Vec<char>>();
-
-        while olen <= len1.min(len2) as i32 {
-            diff = 0;
-            low_qual_diff = 0;
-            let mut ok = true;
-            let offset = len1 as i32 - olen;
-            for i in (0..(olen)) {
-                if str1_cv.get((offset + i) as usize).unwrap() != str2_cv.get(i as usize).unwrap() {
-                    diff += 1;
-                    // one is >= Q30 and the other is <= Q15
-                    if (qual1_cv.get((offset + i) as usize).unwrap() >= &'?'
-                        && qual2_cv.get(i as usize).unwrap() <= &'0')
-                        || (qual1_cv.get((offset + i) as usize).unwrap() <= &'0'
-                            && qual2_cv.get(i as usize).unwrap() >= &'?')
-                    {
-                        low_qual_diff += 1;
-                    }
-                    // we disallow high quality diff, and only allow up to 3 low qual diff
-                    if diff > low_qual_diff || low_qual_diff >= 3 {
-                        ok = false;
-                        break;
+macro_rules! impl_sequence_read_pair_ext {
+    ($self:ident, $to_seq_pair:expr) => {
+        fn fast_merge(&$self) -> Option<SequenceRead> {
+            let rc_right = $self.m_right.reverse_complement();
+            let len1 = $self.m_left.len();
+            let len2 = $self.m_right.len();
+    
+            // use the pointer directly for speed
+            let str1 = $self.m_left.m_seq.m_str.as_str();
+            let str2 = rc_right.m_seq.m_str.as_str();
+            let qual1 = $self.m_left.m_quality.as_str();
+            let qual2 = rc_right.m_quality.as_str();
+    
+            // we require at least 30 bp overlapping to merge a pair
+            const MIN_OVERLAP: i32 = 30;
+    
+            let mut overlapped = false;
+            let mut olen = MIN_OVERLAP;
+            let mut diff = 0;
+    
+            // the diff count for 1 high qual + 1 low qual
+            let mut low_qual_diff = 0;
+    
+            let str1_cv = str1.chars().collect::<Vec<char>>();
+            let str2_cv = str2.chars().collect::<Vec<char>>();
+            let qual1_cv = qual1.chars().collect::<Vec<char>>();
+            let qual2_cv = qual2.chars().collect::<Vec<char>>();
+    
+            while olen <= len1.min(len2) as i32 {
+                diff = 0;
+                low_qual_diff = 0;
+                let mut ok = true;
+                let offset = len1 as i32 - olen;
+                for i in (0..(olen)) {
+                    if str1_cv.get((offset + i) as usize).unwrap() != str2_cv.get(i as usize).unwrap() {
+                        diff += 1;
+                        // one is >= Q30 and the other is <= Q15
+                        if (qual1_cv.get((offset + i) as usize).unwrap() >= &'?'
+                            && qual2_cv.get(i as usize).unwrap() <= &'0')
+                            || (qual1_cv.get((offset + i) as usize).unwrap() <= &'0'
+                                && qual2_cv.get(i as usize).unwrap() >= &'?')
+                        {
+                            low_qual_diff += 1;
+                        }
+                        // we disallow high quality diff, and only allow up to 3 low qual diff
+                        if diff > low_qual_diff || low_qual_diff >= 3 {
+                            ok = false;
+                            break;
+                        }
                     }
                 }
+                if ok {
+                    overlapped = true;
+                    break;
+                }
+                olen += 1;
             }
-            if ok {
-                overlapped = true;
-                break;
-            }
-            olen += 1;
-        }
-
-        if overlapped {
-            let offset = len1 as i32 - olen;
-            let mut ss = String::new();
-            write!(&mut ss, "{} merged_diff_{}", self.m_left.m_name, diff).unwrap();
-            let merged_name = ss;
-            // let merged_seq = format!(
-            //     "{}{}",
-            //     self.m_left.m_seq.m_str.subchars(0, offset as usize),
-            //     rc_right.m_seq.m_str
-            // );
-            let mut merged_seq_cv = str1_cv
-                .get(..(offset as usize))
-                .unwrap()
-                .iter()
-                .copied()
-                .chain(str2_cv.iter().copied())
-                .collect::<Vec<char>>();
-
-            // let merged_qual = format!(
-            //     "{}{}",
-            //     self.m_left.m_quality.subchars(0, offset as usize),
-            //     rc_right.m_quality
-            // );
-            let mut merged_qual_cv = qual1_cv
-                .get(..(offset as usize))
-                .unwrap()
-                .iter()
-                .copied()
-                .chain(qual2_cv.iter().copied())
-                .collect::<Vec<char>>();
-
-            // quality adjuction and correction for low qual diff
-            for i in (0..(olen)) {
-                if str1_cv.get((offset + i) as usize).unwrap() != str2_cv.get(i as usize).unwrap() {
-                    if qual1_cv.get((offset + i) as usize).unwrap() >= &'?'
-                        && qual2_cv.get(i as usize).unwrap() <= &'0'
-                    {
-                        *merged_seq_cv.get_mut((offset + i) as usize).unwrap() =
-                            *str1_cv.get((offset + i) as usize).unwrap();
-                        *merged_qual_cv.get_mut((offset + i) as usize).unwrap() =
-                            *qual1_cv.get((offset + i) as usize).unwrap()
+    
+            if overlapped {
+                let offset = len1 as i32 - olen;
+                let mut ss = String::new();
+                write!(&mut ss, "{} merged_diff_{}", $self.m_left.m_name, diff).unwrap();
+                let merged_name = ss;
+                // let merged_seq = format!(
+                //     "{}{}",
+                //     self.m_left.m_seq.m_str.subchars(0, offset as usize),
+                //     rc_right.m_seq.m_str
+                // );
+                let mut merged_seq_cv = str1_cv
+                    .get(..(offset as usize))
+                    .unwrap()
+                    .iter()
+                    .copied()
+                    .chain(str2_cv.iter().copied())
+                    .collect::<Vec<char>>();
+    
+                // let merged_qual = format!(
+                //     "{}{}",
+                //     self.m_left.m_quality.subchars(0, offset as usize),
+                //     rc_right.m_quality
+                // );
+                let mut merged_qual_cv = qual1_cv
+                    .get(..(offset as usize))
+                    .unwrap()
+                    .iter()
+                    .copied()
+                    .chain(qual2_cv.iter().copied())
+                    .collect::<Vec<char>>();
+    
+                // quality adjuction and correction for low qual diff
+                for i in (0..(olen)) {
+                    if str1_cv.get((offset + i) as usize).unwrap() != str2_cv.get(i as usize).unwrap() {
+                        if qual1_cv.get((offset + i) as usize).unwrap() >= &'?'
+                            && qual2_cv.get(i as usize).unwrap() <= &'0'
+                        {
+                            *merged_seq_cv.get_mut((offset + i) as usize).unwrap() =
+                                *str1_cv.get((offset + i) as usize).unwrap();
+                            *merged_qual_cv.get_mut((offset + i) as usize).unwrap() =
+                                *qual1_cv.get((offset + i) as usize).unwrap()
+                        } else {
+                            *merged_seq_cv.get_mut((offset + i) as usize).unwrap() =
+                                *str2_cv.get((i) as usize).unwrap();
+                            *merged_qual_cv.get_mut((offset + i) as usize).unwrap() =
+                                *qual2_cv.get((i) as usize).unwrap()
+                        }
                     } else {
-                        *merged_seq_cv.get_mut((offset + i) as usize).unwrap() =
-                            *str2_cv.get((i) as usize).unwrap();
-                        *merged_qual_cv.get_mut((offset + i) as usize).unwrap() =
-                            *qual2_cv.get((i) as usize).unwrap()
-                    }
-                } else {
-                    // add the quality of the pair to make a high qual
-                    *merged_qual_cv.get_mut((offset + i) as usize).unwrap() = char::from_u32(
-                        *qual1_cv.get((offset + i) as usize).unwrap() as u32
-                            + *qual2_cv.get(i as usize).unwrap() as u32
-                            - 33,
-                    )
-                    .unwrap();
-                    if merged_qual_cv.get((offset + i) as usize).unwrap() >= &'Z' {
-                        *merged_qual_cv.get_mut((offset + i) as usize).unwrap() = 'Z'
+                        // add the quality of the pair to make a high qual
+                        *merged_qual_cv.get_mut((offset + i) as usize).unwrap() = char::from_u32(
+                            *qual1_cv.get((offset + i) as usize).unwrap() as u32
+                                + *qual2_cv.get(i as usize).unwrap() as u32
+                                - 33,
+                        )
+                        .unwrap();
+                        if merged_qual_cv.get((offset + i) as usize).unwrap() >= &'Z' {
+                            *merged_qual_cv.get_mut((offset + i) as usize).unwrap() = 'Z'
+                        }
                     }
                 }
+    
+                return Some(SequenceRead::new(
+                    merged_name,
+                    merged_seq_cv.into_iter().collect::<String>(),
+                    "+".to_string(),
+                    merged_qual_cv.into_iter().collect::<String>(),
+                    true,
+                ));
             }
-
-            return Some(SequenceRead::new(
-                merged_name,
-                merged_seq_cv.into_iter().collect::<String>(),
-                "+".to_string(),
-                merged_qual_cv.into_iter().collect::<String>(),
-                true,
-            ));
+    
+            None
         }
+    };
+}
 
-        None
-    }
+pub(crate) use impl_sequence_read_pair_ext;
+pub(crate) trait SequenceReadPairExt {
+    fn fast_merge(&self) -> Option<SequenceRead>;
+}
+
+impl SequenceReadPairExt for SequenceReadPair {
+    impl_sequence_read_pair_ext!(self, self);
 }
 
 #[cfg(test)]
@@ -445,7 +495,7 @@ mod test {
 
     use crate::core::read::SequenceReadPair;
 
-    use super::SequenceRead;
+    use super::*;
 
     fn _fast_merge() -> bool {
         let left = SequenceRead::new(

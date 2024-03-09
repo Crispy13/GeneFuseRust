@@ -73,7 +73,7 @@ impl FusionScan {
             let mut fqr = FastqReaderPair::from_paths(&self.m_read1_file, &self.m_read2_file)?;
 
             let mut srp_vec = vec![];
-            while let Some(srp) = fqr.read() {
+            while let Some(srp) = fqr.read_and_into_arc() {
                 srp_vec.push(srp);
             }
 
@@ -83,7 +83,7 @@ impl FusionScan {
 
             let mut sr_vec = vec![];
             while let Some(srp) = fqr.read() {
-                sr_vec.push(srp);
+                sr_vec.push(Arc::new(srp));
             }
 
             (None, Some(sr_vec))
