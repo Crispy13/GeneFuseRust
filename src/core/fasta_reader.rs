@@ -1,8 +1,7 @@
 use std::panic::Location;
 use std::{
     collections::{BTreeMap, HashMap},
-    error,
-    fmt,
+    error, fmt,
     fs::File,
     io::{self, BufRead, BufReader, Read},
     mem,
@@ -37,10 +36,7 @@ pub(crate) struct FastaReader {
 }
 
 impl FastaReader {
-    pub(crate) fn new(
-        fasta_file: impl AsRef<Path>,
-        force_upper_case: bool,
-    ) -> Result<Self, Error> {
+    pub(crate) fn new(fasta_file: impl AsRef<Path>, force_upper_case: bool) -> Result<Self, Error> {
         let fasta_file = fasta_file.as_ref();
 
         if fasta_file.is_dir() {
@@ -73,14 +69,14 @@ impl FastaReader {
 
         // seek to first contig
         let mut read_buf = Vec::new();
-        if let Ok(true) = fasta_buf_reader
+
+        match fasta_buf_reader
             .read_until(b'>', &mut read_buf)
-            .and_then(|rl| Ok(rl > 0))
-        {
-            // do nothing
-        } else {
-            Err(EmptyFileError::new(&fasta_file))?
-        }
+            .and_then(|rl| Ok(rl > 0)) {
+                Ok(true) => {},
+                Ok(false) => Err(EmptyFileError::new(&fasta_file))?,
+                Err(err) => Err(err)?,
+            }
 
         read_buf.clear();
 
